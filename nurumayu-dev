@@ -1,0 +1,179 @@
+#!/bin/bash
+
+# ======================================
+# nurumayu-dev - Web開発支援ツールキット
+# ======================================
+
+set -euo pipefail
+
+# スクリプトのディレクトリを取得
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TOOL_NAME="nurumayu-dev"
+VERSION="1.0.0"
+
+# カラー定義
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+PURPLE='\033[0;35m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No Color
+
+# ロゴ表示
+show_banner() {
+    echo -e "${PURPLE}"
+    echo "  ███╗   ██╗██╗   ██╗██████╗ ██╗   ██╗███╗   ███╗ █████╗ ██╗   ██╗██╗   ██╗"
+    echo "  ████╗  ██║██║   ██║██╔══██╗██║   ██║████╗ ████║██╔══██╗╚██╗ ██╔╝██║   ██║"
+    echo "  ██╔██╗ ██║██║   ██║██████╔╝██║   ██║██╔████╔██║███████║ ╚████╔╝ ██║   ██║"
+    echo "  ██║╚██╗██║██║   ██║██╔══██╗██║   ██║██║╚██╔╝██║██╔══██║  ╚██╔╝  ██║   ██║"
+    echo "  ██║ ╚████║╚██████╔╝██║  ██║╚██████╔╝██║ ╚═╝ ██║██║  ██║   ██║   ╚██████╔╝"
+    echo "  ╚═╝  ╚═══╝ ╚═════╝ ╚═╝  ╚═╝ ╚═════╝ ╚═╝     ╚═╝╚═╝  ╚═╝   ╚═╝    ╚═════╝ "
+    echo -e "${NC}"
+    echo -e "${CYAN}    🚀 Web開発支援ツールキット v${VERSION}${NC}"
+    echo ""
+}
+
+# ヘルプ表示
+show_help() {
+    show_banner
+    echo -e "${BLUE}使用方法:${NC}"
+    echo "  $TOOL_NAME <command> [options] [arguments]"
+    echo ""
+    echo -e "${BLUE}利用可能なコマンド:${NC}"
+    echo -e "  ${GREEN}detect_dup${NC}    コード重複検出ツール"
+    echo -e "  ${GREEN}version${NC}       バージョン情報を表示"
+    echo -e "  ${GREEN}help${NC}          このヘルプを表示"
+    echo ""
+    echo -e "${BLUE}例:${NC}"
+    echo "  $TOOL_NAME detect_dup --all ./src"
+    echo "  $TOOL_NAME detect_dup --text --output json ./project"
+    echo "  $TOOL_NAME detect_dup --help"
+    echo ""
+    echo -e "${BLUE}各コマンドの詳細:${NC}"
+    echo "  $TOOL_NAME <command> --help でコマンド固有のヘルプを表示"
+    echo ""
+    echo -e "${YELLOW}📚 ドキュメント:${NC}"
+    echo "  README.md           - プロジェクト概要"
+    echo "  detect_dup/README.md - detect_dup詳細説明"
+    echo ""
+}
+
+# バージョン情報表示
+show_version() {
+    echo -e "${PURPLE}$TOOL_NAME${NC} version ${GREEN}$VERSION${NC}"
+    echo ""
+    echo -e "${BLUE}利用可能な機能:${NC}"
+    
+    # detect_dup の情報
+    if [ -x "$SCRIPT_DIR/detect_dup/detect_dup" ]; then
+        echo -e "  ${GREEN}✅ detect_dup${NC} - コード重複検出ツール"
+    else
+        echo -e "  ${RED}❌ detect_dup${NC} - スクリプトが見つからないか実行権限がありません"
+    fi
+    
+    echo ""
+    echo -e "${YELLOW}システム情報:${NC}"
+    echo "  OS: $(uname -s)"
+    echo "  シェル: $SHELL"
+    echo "  作業ディレクトリ: $(pwd)"
+    echo ""
+}
+
+# エラーメッセージ表示
+error_exit() {
+    echo -e "${RED}❌ エラー: $1${NC}" >&2
+    exit 1
+}
+
+# 警告メッセージ表示
+warning() {
+    echo -e "${YELLOW}⚠️  警告: $1${NC}" >&2
+}
+
+# 成功メッセージ表示
+success() {
+    echo -e "${GREEN}✅ $1${NC}"
+}
+
+# detect_dup コマンド実行
+run_detect_dup() {
+    local detect_dup_script="$SCRIPT_DIR/detect_dup/detect_dup"
+    
+    # スクリプトの存在確認
+    if [ ! -f "$detect_dup_script" ]; then
+        error_exit "detect_dupスクリプトが見つかりません: $detect_dup_script"
+    fi
+    
+    # 実行権限確認
+    if [ ! -x "$detect_dup_script" ]; then
+        warning "detect_dupスクリプトに実行権限がありません。権限を追加しています..."
+        chmod +x "$detect_dup_script"
+        success "実行権限を追加しました"
+    fi
+    
+    # detect_dupを実行（残りの引数をすべて渡す）
+    exec "$detect_dup_script" "$@"
+}
+
+# コマンドリスト表示
+list_commands() {
+    echo -e "${BLUE}利用可能なコマンド:${NC}"
+    echo ""
+    
+    # detect_dup
+    if [ -x "$SCRIPT_DIR/detect_dup/detect_dup" ]; then
+        echo -e "${GREEN}detect_dup${NC} - JavaScript コード重複検出ツール"
+        echo "  使用例: $TOOL_NAME detect_dup --all ./src"
+        echo "  詳細: $TOOL_NAME detect_dup --help"
+    else
+        echo -e "${RED}detect_dup${NC} - 利用不可（スクリプトが見つかりません）"
+    fi
+    
+    echo ""
+    echo -e "${BLUE}システムコマンド:${NC}"
+    echo -e "${GREEN}version${NC}     - バージョン情報"
+    echo -e "${GREEN}help${NC}        - ヘルプ表示"
+    echo -e "${GREEN}list${NC}        - コマンド一覧"
+    echo ""
+}
+
+# メイン処理
+main() {
+    # 引数が無い場合はヘルプを表示
+    if [ $# -eq 0 ]; then
+        show_help
+        exit 0
+    fi
+    
+    local command="$1"
+    shift
+    
+    # コマンド処理
+    case "$command" in
+        "detect_dup"|"detect-dup")
+            run_detect_dup "$@"
+            ;;
+        "version"|"-v"|"--version")
+            show_version
+            ;;
+        "help"|"-h"|"--help")
+            show_help
+            ;;
+        "list"|"ls")
+            list_commands
+            ;;
+        *)
+            echo -e "${RED}❌ 不明なコマンド: $command${NC}" >&2
+            echo ""
+            echo -e "${BLUE}利用可能なコマンド:${NC}"
+            echo "  detect_dup, version, help, list"
+            echo ""
+            echo "詳細は '$TOOL_NAME help' を参照してください。"
+            exit 1
+            ;;
+    esac
+}
+
+# スクリプト実行
+main "$@" 

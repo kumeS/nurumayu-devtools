@@ -1,0 +1,495 @@
+{
+  "test_metadata": {
+    "total_duplicate_groups": 50,
+    "expected_detectable": 45,
+    "expected_undetectable": 5,
+    "files": [
+      "basic_duplicates.js",
+      "text_duplicates.js", 
+      "structural_duplicates.js",
+      "pattern_duplicates.js",
+      "functional_duplicates.js",
+      "semantic_clones.js"
+    ],
+    "detection_categories": [
+      "BASIC",
+      "TEXT", 
+      "STRUCTURAL",
+      "PATTERNS",
+      "FUNCTIONAL",
+      "SEMANTIC"
+    ]
+  },
+  
+  "expected_results": {
+    "basic_001": {
+      "category": "BASIC", 
+      "difficulty": "easy",
+      "expected_detection": true,
+      "locations": ["basic_duplicates.js:8-15", "basic_duplicates.js:22-29"]
+    },
+    "basic_002": {
+      "category": "BASIC",
+      "difficulty": "easy", 
+      "expected_detection": true,
+      "locations": ["basic_duplicates.js:36-44", "basic_duplicates.js:51-59"]
+    },
+    "basic_003": {
+      "category": "BASIC",
+      "difficulty": "easy",
+      "expected_detection": true,
+      "locations": ["basic_duplicates.js:66-80", "basic_duplicates.js:87-101"]
+    },
+    "basic_004": {
+      "category": "BASIC",
+      "difficulty": "easy",
+      "expected_detection": true,
+      "locations": ["basic_duplicates.js:108-116", "basic_duplicates.js:124-132"]
+    },
+    "basic_005": {
+      "category": "BASIC",
+      "difficulty": "easy",
+      "expected_detection": true,
+      "locations": ["basic_duplicates.js:139-156", "basic_duplicates.js:163-180"]
+    },
+    
+    "text_001": {
+      "category": "TEXT",
+      "difficulty": "easy",
+      "expected_detection": true,
+      "locations": ["text_duplicates.js:8-18", "text_duplicates.js:25-35"]
+    },
+    "text_002": {
+      "category": "TEXT",
+      "difficulty": "easy",
+      "expected_detection": true,
+      "locations": ["text_duplicates.js:42-47", "text_duplicates.js:49-54"]
+    },
+    "text_003": {
+      "category": "TEXT", 
+      "difficulty": "easy",
+      "expected_detection": true,
+      "locations": ["text_duplicates.js:61-69", "text_duplicates.js:71-79"]
+    },
+    "text_004": {
+      "category": "TEXT",
+      "difficulty": "easy", 
+      "expected_detection": true,
+      "locations": ["text_duplicates.js:86-90", "text_duplicates.js:92-96"]
+    },
+    "text_005": {
+      "category": "TEXT",
+      "difficulty": "easy",
+      "expected_detection": true, 
+      "locations": ["text_duplicates.js:103-107", "text_duplicates.js:109-113"]
+    },
+    "text_006": {
+      "category": "TEXT",
+      "difficulty": "medium",
+      "expected_detection": true,
+      "locations": ["text_duplicates.js:120-136", "text_duplicates.js:138-154"]
+    },
+    "text_007": {
+      "category": "TEXT",
+      "difficulty": "easy",
+      "expected_detection": true,
+      "locations": ["text_duplicates.js:161-170", "text_duplicates.js:172-181"]
+    },
+    "text_008": {
+      "category": "TEXT",
+      "difficulty": "easy",
+      "expected_detection": true,
+      "locations": ["text_duplicates.js:188-191", "text_duplicates.js:193-196"]
+    },
+    "text_009": {
+      "category": "TEXT",
+      "difficulty": "medium",
+      "expected_detection": true,
+      "locations": ["text_duplicates.js:203-213", "text_duplicates.js:215-225"]
+    },
+    "text_010": {
+      "category": "TEXT", 
+      "difficulty": "easy",
+      "expected_detection": true,
+      "locations": ["text_duplicates.js:232-239", "text_duplicates.js:241-248", "text_duplicates.js:250-259", "text_duplicates.js:261-270"]
+    },
+    
+    "structural_duplicates": [
+      {
+        "group_id": "struct_001",
+        "category": "STRUCTURAL",
+        "difficulty": "easy",
+        "expected_detection": true,
+        "locations": [
+          "structural_duplicates.js:8-20",
+          "structural_duplicates.js:22-34"
+        ],
+        "description": "if-else structure duplication"
+      },
+      {
+        "group_id": "struct_002",
+        "category": "STRUCTURAL",
+        "difficulty": "easy", 
+        "expected_detection": true,
+        "locations": [
+          "structural_duplicates.js:41-51",
+          "structural_duplicates.js:53-63"
+        ],
+        "description": "for loop structure duplication"
+      },
+      {
+        "group_id": "struct_003",
+        "category": "STRUCTURAL",
+        "difficulty": "medium",
+        "expected_detection": true,
+        "locations": [
+          "structural_duplicates.js:70-84",
+          "structural_duplicates.js:86-100"
+        ],
+        "description": "try-catch structure duplication"
+      },
+      {
+        "group_id": "struct_004",
+        "category": "STRUCTURAL",
+        "difficulty": "medium",
+        "expected_detection": true,
+        "locations": [
+          "structural_duplicates.js:107-123",
+          "structural_duplicates.js:125-141"
+        ],
+        "description": "switch statement structure duplication"
+      },
+      {
+        "group_id": "struct_005",
+        "category": "STRUCTURAL",
+        "difficulty": "medium",
+        "expected_detection": true,
+        "locations": [
+          "structural_duplicates.js:148-162",
+          "structural_duplicates.js:164-178"
+        ],
+        "description": "nested if structure duplication"
+      },
+      {
+        "group_id": "struct_006",
+        "category": "STRUCTURAL",
+        "difficulty": "easy",
+        "expected_detection": true,
+        "locations": [
+          "structural_duplicates.js:185-197",
+          "structural_duplicates.js:199-211"
+        ],
+        "description": "while loop structure duplication"
+      },
+      {
+        "group_id": "struct_007",
+        "category": "STRUCTURAL",
+        "difficulty": "medium",
+        "expected_detection": true,
+        "locations": [
+          "structural_duplicates.js:218-235",
+          "structural_duplicates.js:237-254"
+        ],
+        "description": "for...of loop with conditions duplication"
+      },
+      {
+        "group_id": "struct_008",
+        "category": "STRUCTURAL",
+        "difficulty": "medium",
+        "expected_detection": true,
+        "locations": [
+          "structural_duplicates.js:261-277",
+          "structural_duplicates.js:279-295"
+        ],
+        "description": "complex conditional structure duplication"
+      },
+      {
+        "group_id": "struct_009",
+        "category": "STRUCTURAL",
+        "difficulty": "medium",
+        "expected_detection": true,
+        "locations": [
+          "structural_duplicates.js:302-318",
+          "structural_duplicates.js:320-336"
+        ],
+        "description": "try-catch-finally structure duplication"
+      },
+      {
+        "group_id": "struct_010",
+        "category": "STRUCTURAL",
+        "difficulty": "hard",
+        "expected_detection": true,
+        "locations": [
+          "structural_duplicates.js:343-366",
+          "structural_duplicates.js:368-391"
+        ],
+        "description": "complex nested control flow duplication"
+      }
+    ],
+    
+    "pattern_duplicates": [
+      {
+        "group_id": "pattern_001",
+        "category": "PATTERNS",
+        "difficulty": "medium",
+        "expected_detection": true,
+        "locations": [
+          "pattern_duplicates.js:8-14",
+          "pattern_duplicates.js:16-22"
+        ],
+        "description": "Array method chaining patterns"
+      },
+      {
+        "group_id": "pattern_002",
+        "category": "PATTERNS",
+        "difficulty": "medium",
+        "expected_detection": true,
+        "locations": [
+          "pattern_duplicates.js:29-38",
+          "pattern_duplicates.js:40-49"
+        ],
+        "description": "Promise chaining patterns"
+      },
+      {
+        "group_id": "pattern_003",
+        "category": "PATTERNS",
+        "difficulty": "easy",
+        "expected_detection": true,
+        "locations": [
+          "pattern_duplicates.js:56-68",
+          "pattern_duplicates.js:70-82"
+        ],
+        "description": "API call patterns"
+      },
+      {
+        "group_id": "pattern_004",
+        "category": "PATTERNS",
+        "difficulty": "easy",
+        "expected_detection": true,
+        "locations": [
+          "pattern_duplicates.js:89-102",
+          "pattern_duplicates.js:104-117"
+        ],
+        "description": "Regular expression usage patterns"
+      },
+      {
+        "group_id": "pattern_005",
+        "category": "PATTERNS",
+        "difficulty": "medium",
+        "expected_detection": true,
+        "locations": [
+          "pattern_duplicates.js:124-139",
+          "pattern_duplicates.js:141-156"
+        ],
+        "description": "Event handling patterns"
+      },
+      {
+        "group_id": "pattern_006",
+        "category": "PATTERNS",
+        "difficulty": "medium",
+        "expected_detection": true,
+        "locations": [
+          "pattern_duplicates.js:163-174",
+          "pattern_duplicates.js:176-187"
+        ],
+        "description": "Object manipulation patterns"
+      },
+      {
+        "group_id": "pattern_007",
+        "category": "PATTERNS",
+        "difficulty": "medium",
+        "expected_detection": true,
+        "locations": [
+          "pattern_duplicates.js:194-208",
+          "pattern_duplicates.js:210-224"
+        ],
+        "description": "Async/await error handling patterns"
+      },
+      {
+        "group_id": "pattern_008",
+        "category": "PATTERNS",
+        "difficulty": "easy",
+        "expected_detection": true,
+        "locations": [
+          "pattern_duplicates.js:231-244",
+          "pattern_duplicates.js:246-259"
+        ],
+        "description": "DOM manipulation patterns"
+      },
+      {
+        "group_id": "pattern_009",
+        "category": "PATTERNS",
+        "difficulty": "medium",
+        "expected_detection": true,
+        "locations": [
+          "pattern_duplicates.js:266-284",
+          "pattern_duplicates.js:286-304"
+        ],
+        "description": "State management patterns"
+      },
+      {
+        "group_id": "pattern_010",
+        "category": "PATTERNS",
+        "difficulty": "hard",
+        "expected_detection": true,
+        "locations": [
+          "pattern_duplicates.js:311-329",
+          "pattern_duplicates.js:331-349"
+        ],
+        "description": "Complex data processing pipeline"
+      }
+    ],
+    
+    "functional_duplicates": [
+      {
+        "group_id": "func_001",
+        "category": "FUNCTIONAL",
+        "difficulty": "easy",
+        "expected_detection": true,
+        "locations": [
+          "functional_duplicates.js:8-11",
+          "functional_duplicates.js:13-16",
+          "functional_duplicates.js:287-290"
+        ],
+        "description": "Function declaration duplication"
+      },
+      {
+        "group_id": "func_002",
+        "category": "FUNCTIONAL",
+        "difficulty": "easy",
+        "expected_detection": true,
+        "locations": [
+          "functional_duplicates.js:23-24",
+          "functional_duplicates.js:274-275"
+        ],
+        "description": "Arrow function duplication"
+      },
+      {
+        "group_id": "func_003",
+        "category": "FUNCTIONAL",
+        "difficulty": "medium",
+        "expected_detection": true,
+        "locations": [
+          "functional_duplicates.js:31-43",
+          "functional_duplicates.js:45-57"
+        ],
+        "description": "Method duplication in classes"
+      },
+      {
+        "group_id": "func_004",
+        "category": "FUNCTIONAL",
+        "difficulty": "medium",
+        "expected_detection": true,
+        "locations": [
+          "functional_duplicates.js:64-72",
+          "functional_duplicates.js:74-82"
+        ],
+        "description": "Callback function patterns"
+      },
+      {
+        "group_id": "func_005",
+        "category": "FUNCTIONAL",
+        "difficulty": "medium",
+        "expected_detection": true,
+        "locations": [
+          "functional_duplicates.js:89-96",
+          "functional_duplicates.js:98-105",
+          "functional_duplicates.js:277-284"
+        ],
+        "description": "Higher-order function duplication"
+      },
+      {
+        "group_id": "func_006",
+        "category": "FUNCTIONAL",
+        "difficulty": "medium",
+        "expected_detection": true,
+        "locations": [
+          "functional_duplicates.js:112-122",
+          "functional_duplicates.js:124-134"
+        ],
+        "description": "Event handler function duplication"
+      },
+      {
+        "group_id": "func_007",
+        "category": "FUNCTIONAL",
+        "difficulty": "hard",
+        "expected_detection": true,
+        "locations": [
+          "functional_duplicates.js:141-163",
+          "functional_duplicates.js:165-187"
+        ],
+        "description": "Complex function with multiple responsibilities"
+      },
+      {
+        "group_id": "func_008",
+        "category": "FUNCTIONAL",
+        "difficulty": "medium",
+        "expected_detection": true,
+        "locations": [
+          "functional_duplicates.js:194-208",
+          "functional_duplicates.js:210-224"
+        ],
+        "description": "Async function duplication"
+      },
+      {
+        "group_id": "func_009",
+        "category": "FUNCTIONAL",
+        "difficulty": "medium",
+        "expected_detection": true,
+        "locations": [
+          "functional_duplicates.js:231-237",
+          "functional_duplicates.js:239-245"
+        ],
+        "description": "Recursive function duplication"
+      },
+      {
+        "group_id": "func_010",
+        "category": "FUNCTIONAL",
+        "difficulty": "hard",
+        "expected_detection": true,
+        "locations": [
+          "functional_duplicates.js:252-272",
+          "functional_duplicates.js:274-294"
+        ],
+        "description": "Complex utility function with error handling"
+      }
+    ],
+    
+    "semantic_001": {
+      "category": "SEMANTIC",
+      "difficulty": "hard",
+      "expected_detection": false,
+      "locations": ["semantic_clones.js:8-14", "semantic_clones.js:16-18", "semantic_clones.js:20-22", "semantic_clones.js:24-26"]
+    },
+    "semantic_002": {
+      "category": "SEMANTIC",
+      "difficulty": "hard",
+      "expected_detection": false,
+      "locations": ["semantic_clones.js:33-42", "semantic_clones.js:44-46", "semantic_clones.js:48-57", "semantic_clones.js:59-68"]
+    },
+    "semantic_003": {
+      "category": "SEMANTIC",
+      "difficulty": "hard",
+      "expected_detection": false,
+      "locations": ["semantic_clones.js:75-82", "semantic_clones.js:84-91", "semantic_clones.js:93-100"]
+    },
+    "semantic_004": {
+      "category": "SEMANTIC",
+      "difficulty": "hard",
+      "expected_detection": false,
+      "locations": ["semantic_clones.js:107-117", "semantic_clones.js:119-131", "semantic_clones.js:133-149"]
+    },
+    "semantic_005": {
+      "category": "SEMANTIC",
+      "difficulty": "hard",
+      "expected_detection": false,
+      "locations": ["semantic_clones.js:156-163", "semantic_clones.js:165-173", "semantic_clones.js:175-183", "semantic_clones.js:185-193"]
+    }
+  },
+  
+  "performance_targets": {
+    "overall_detection_rate": 0.75,
+    "precision_target": 0.80,
+    "recall_target": 0.70
+  }
+} 

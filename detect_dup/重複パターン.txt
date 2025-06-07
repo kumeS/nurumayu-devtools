@@ -1,0 +1,390 @@
+# detect-dup で検出できない重複パターンの分析
+
+## 🚨 重大な検出漏れ（HIGH PRIORITY）
+
+### 1. **セマンティッククローン（Type-3, Type-4）**
+
+#### 機能的に同一だが実装が異なるコード
+```javascript
+// パターン1: if-else文
+function validateAge1(age) {
+  if (age >= 18) {
+    return true;
+  } else {
+    return false;
+  }
+}
+
+// パターン2: 三項演算子（検出されない）
+function validateAge2(age) {
+  return age >= 18 ? true : false;
+}
+
+// パターン3: 論理演算（検出されない）
+function validateAge3(age) {
+  return age >= 18;
+}
+```
+
+**検出漏れの理由**: 構文が完全に異なるため、テキストベース・構造ベースでは検出不可
+
+#### 配列操作の異なる実装
+```javascript
+// パターン1: forEach + push
+function getActiveUsers1(users) {
+  const result = [];
+  users.forEach(user => {
+    if (user.active) {
+      result.push(user);
+    }
+  });
+  return result;
+}
+
+// パターン2: filter（検出されない）
+function getActiveUsers2(users) {
+  return users.filter(user => user.active);
+}
+
+// パターン3: for loop（検出されない）
+function getActiveUsers3(users) {
+  const result = [];
+  for (let i = 0; i < users.length; i++) {
+    if (users[i].active) {
+      result.push(users[i]);
+    }
+  }
+  return result;
+}
+```
+
+### 2. **変数名・プロパティ名の違いによる重複**
+
+```javascript
+// 同一ロジック、異なる命名（検出されない）
+function calculateTotalPrice(items) {
+  let total = 0;
+  for (const item of items) {
+    total += item.price * item.quantity;
+  }
+  return total;
+}
+
+function calculateOrderAmount(products) {
+  let sum = 0;
+  for (const product of products) {
+    sum += product.cost * product.count;
+  }
+  return sum;
+}
+```
+
+**検出漏れの理由**: 現在の正規化は簡易的で、意味的に同一な変数を識別できない
+
+### 3. **API呼び出しパターンの違い**
+
+```javascript
+// 同期版
+function fetchUserData(id) {
+  const response = fetch(`/api/users/${id}`);
+  const data = response.json();
+  return data;
+}
+
+// async/await版（検出されない）
+async function getUserData(id) {
+  const response = await fetch(`/api/users/${id}`);
+  const data = await response.json();
+  return data;
+}
+
+// Promise.then版（検出されない）
+function loadUserData(id) {
+  return fetch(`/api/users/${id}`)
+    .then(response => response.json());
+}
+```
+
+## ⚠️ 構造的検出の限界（MEDIUM PRIORITY）
+
+### 4. **深いネスト構造の類似性**
+
+```javascript
+// パターン1
+function processOrder(order) {
+  if (order.items) {
+    for (const item of order.items) {
+      if (item.category === 'electronics') {
+        if (item.price > 1000) {
+          applyDiscount(item, 0.1);
+        }
+      }
+    }
+  }
+}
+
+// パターン2: 早期リターンで構造が異なる（検出されない）
+function processOrder2(order) {
+  if (!order.items) return;
+  
+  for (const item of order.items) {
+    if (item.category !== 'electronics') continue;
+    if (item.price <= 1000) continue;
+    
+    applyDiscount(item, 0.1);
+  }
+}
+```
+
+### 5. **条件式の論理的等価性**
+
+```javascript
+// De Morganの法則による等価条件（検出されない）
+if (!(user.isActive && user.isVerified)) {
+  // パターン1
+}
+
+if (!user.isActive || !user.isVerified) {
+  // パターン2（論理的に同一）
+}
+```
+
+### 6. **オブジェクト構造の違い**
+
+```javascript
+// パターン1: オブジェクトリテラル
+const config = {
+  api: {
+    baseUrl: 'https://api.example.com',
+    timeout: 5000
+  }
+};
+
+// パターン2: 段階的構築（検出されない）
+const config = {};
+config.api = {};
+config.api.baseUrl = 'https://api.example.com';
+config.api.timeout = 5000;
+
+// パターン3: Object.assign（検出されない）
+const config = Object.assign({}, {
+  api: Object.assign({}, {
+    baseUrl: 'https://api.example.com',
+    timeout: 5000
+  })
+});
+```
+
+## 📝 テキストレベル検出の問題（MEDIUM PRIORITY）
+
+### 7. **コメント・空白による分断**
+
+```javascript
+// パターン1
+function calculateTotal(items) {
+  let sum = 0;
+  for (const item of items) {
+    sum += item.price;
+  }
+  return sum;
+}
+
+// パターン2: コメントにより検出されない
+function calculateTotal2(items) {
+  let sum = 0;
+  // 各アイテムの価格を合計
+  for (const item of items) {
+    sum += item.price;
+  }
+  return sum;
+}
+```
+
+### 8. **フォーマットの違い**
+
+```javascript
+// パターン1: 1行形式
+const users = data.filter(item => item.active).map(item => item.name);
+
+// パターン2: 複数行形式（検出されない可能性）
+const users = data
+  .filter(item => item.active)
+  .map(item => item.name);
+```
+
+## 🔄 動的・実行時重複（MEDIUM-LOW PRIORITY）
+
+### 9. **実行パスによる条件分岐重複**
+
+```javascript
+function processData(type, data) {
+  if (type === 'user') {
+    // 共通処理A
+    validateData(data);
+    sanitizeData(data);
+    saveToDatabase(data);
+  } else if (type === 'product') {
+    // 共通処理A（重複だが異なるパスで検出困難）
+    validateData(data);
+    sanitizeData(data);
+    saveToDatabase(data);
+  }
+}
+```
+
+### 10. **高階関数・クロージャの重複**
+
+```javascript
+// 同一パターンのクロージャ（検出困難）
+function createValidator(field) {
+  return function(value) {
+    if (!value) {
+      throw new Error(`${field} is required`);
+    }
+    return value;
+  };
+}
+
+function createChecker(property) {
+  return function(input) {
+    if (!input) {
+      throw new Error(`${property} is required`);
+    }
+    return input;
+  };
+}
+```
+
+## 🌐 ES6+・モダンJavaScript特有の問題
+
+### 11. **分割代入の異なるパターン**
+
+```javascript
+// パターン1: オブジェクト分割代入
+function getUserInfo({name, email, age}) {
+  return `${name} (${email}), Age: ${age}`;
+}
+
+// パターン2: 通常のプロパティアクセス（検出されない）
+function getUserInfo(user) {
+  return `${user.name} (${user.email}), Age: ${user.age}`;
+}
+```
+
+### 12. **テンプレートリテラル vs 文字列連結**
+
+```javascript
+// パターン1: テンプレートリテラル
+const message = `Hello, ${name}! Today is ${date}.`;
+
+// パターン2: 文字列連結（検出されない）
+const message = 'Hello, ' + name + '! Today is ' + date + '.';
+```
+
+## 🧠 型・インターフェース重複（TypeScript）
+
+### 13. **型定義の重複**（将来の課題）
+
+```typescript
+// パターン1
+interface User {
+  id: number;
+  name: string;
+  email: string;
+}
+
+// パターン2: 同一構造だが異なる名前（検出されない）
+interface Customer {
+  id: number;
+  name: string;
+  email: string;
+}
+
+// パターン3: type alias（検出されない）
+type Person = {
+  id: number;
+  name: string;
+  email: string;
+};
+```
+
+## 📚 ライブラリ・フレームワーク固有の重複
+
+### 14. **React Hook重複**
+
+```javascript
+// 同一ロジックの異なるhook実装（検出困難）
+function useUserData(id) {
+  const [user, setUser] = useState(null);
+  useEffect(() => {
+    fetchUser(id).then(setUser);
+  }, [id]);
+  return user;
+}
+
+function useCustomerData(id) {
+  const [customer, setCustomer] = useState(null);
+  useEffect(() => {
+    fetchUser(id).then(setCustomer);
+  }, [id]);
+  return customer;
+}
+```
+
+### 15. **設定オブジェクトの重複**
+
+```javascript
+// webpack.config.js
+module.exports = {
+  entry: './src/index.js',
+  output: {
+    path: path.resolve(__dirname, 'dist'),
+    filename: 'bundle.js'
+  }
+};
+
+// rollup.config.js（類似設定だが検出されない）
+export default {
+  input: 'src/index.js',
+  output: {
+    dir: 'dist',
+    format: 'cjs'
+  }
+};
+```
+
+## 🛠️ 検出改善のための提案
+
+### Phase 1: 即座に実装可能
+1. **正規化の改善**: より高度な変数名・関数名の抽象化
+2. **AST解析の導入**: Node.js `@babel/parser`活用
+3. **セマンティック分析**: 機能的等価性の基本判定
+
+### Phase 2: 中期的改善
+4. **型情報の活用**: TypeScript AST解析
+5. **制御フロー正規化**: 条件分岐の論理的等価性
+6. **データフロー解析**: 変数の使用パターン分析
+
+### Phase 3: 高度な機能
+7. **機械学習導入**: コード埋め込み（Code2Vec等）
+8. **実行トレース**: 動的解析との組み合わせ
+9. **フレームワーク認識**: React、Vue等の特化分析
+
+## 🎯 優先順位付きアクションプラン
+
+### 🔥 HIGH（即座に対応）
+- **AST解析の導入**: 構文レベルの正確な解析
+- **変数名正規化の改善**: 意味的に同一な識別子の検出
+- **三項演算子 ↔ if-else変換**: 基本的な構文等価性
+
+### ⚡ MEDIUM（短期改善）
+- **セマンティッククローン検出**: Type-3重複の基本対応
+- **ES6+構文対応**: 分割代入、テンプレートリテラル
+- **コメント除去の改善**: より正確な前処理
+
+### 📈 LOW（長期計画）
+- **機械学習ベース**: 深層学習による意味理解
+- **フレームワーク特化**: React、Vue、Angular対応
+- **型システム統合**: TypeScript完全対応
+
+この分析により、現在の`detect-dup`は**基本的な重複検出**には有効だが、**セマンティッククローン**や**実装パターンの違い**による重複検出には限界があることが明確になります。
