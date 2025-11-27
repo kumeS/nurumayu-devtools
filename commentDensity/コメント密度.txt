@@ -1,0 +1,53 @@
+以下は、コード全体に占めるドキュメント・コメントの適切な比率（コメント密度）に関する調査結果と推奨値のまとめです。
+
+要約：
+OSS の平均的なコメント密度は約19%（コード5行に対し1行のコメント）とされ、その変動幅は大きいものの、30～60% を「最適帯域」とする研究もあります。一方、80%以上になると「過剰コメント」となり得るとの指摘もあり、一般的には20～40% 程度を目安にすると、可読性と保守性のバランスが良いと考えられます。さらに、関数レベルではコメントとステートメントの比率を測る「関数コメント密度」指標（Polyspace）を活用し、10～30% を目安にするのが実務的です。
+
+## コメント密度（Comment Density）とは
+
+コメント密度は、「コメント行数÷コード行数（非空行・非コメント行）」で算出される割合です ([software.com][1])。
+ファイル全体だけでなく、関数単位で「コメント行数÷ステートメント数」として定義されることもあります（Polyspace の Function Comment Density） ([mathworks.com][2])。
+
+## 現状の実測値
+
+OSS 調査では、サンプルプロジェクト全体で平均約19%（コード5行に1行コメント）という結果が得られています ([dirkriehle.com][3])。
+一方、Reddit の開発者コミュニティでは「実際には 1コメント／30コード行」程度とする声もあり、これは約3% 程度に相当します ([reddit.com][4])。
+
+## 研究・業界ガイドラインによる推奨値
+
+* **Arafat & Riehle (2009), He (2019)** では、コメント密度の最適帯域を\*\*30～60%\*\*と提案しています ([researchgate.net][5])。
+* **Codacy** は、ドキュメント量が80%以上だと「過剰」であるとし、20～50% 程度を望ましいとする見解を示しています ([blog.codacy.com][6])。
+* **SonarSource Community** の議論では、「CI の品質ゲートでコメント行が多すぎても警告できない仕様だが、過剰コメントは混乱を招く」との指摘があります ([community.sonarsource.com][7])。
+* **Wikipedia** の一般的見解では、言語やプロジェクトによっては“全非空文字の50%以上がコメント”というケースもあるものの、多くのエキスパートは**コードの30%以下**に抑えるべきと論じています ([en.wikipedia.org][8])。
+
+## 適切なコメント量の調整方法
+
+1. **ベースラインの設定**
+
+   * まずプロジェクト全体のコメント密度を計測し、現在値を把握する（例：CLOC, SLOC 使用）。
+2. **目標値の決定**
+
+   * 小規模ライブラリなら20〜30%、大規模アプリケーションなら30〜40%をめどに設定する。
+3. **関数レベルでのモニタリング**
+
+   * Polyspace の Function Comment Density のように、関数ごとにコメント密度を測り、10〜30%を標準とする ([arxiv.org][9])。
+4. **CI／品質ゲートへの組み込み**
+
+   * 「コメント密度が10%未満、あるいは50%超過」の場合に警告を出すよう SonarQube 等でルールを追加する ([community.sonarsource.com][7])。
+5. **レビュー時のチェックリスト化**
+
+   * 「意図を説明しているか」「冗長ではないか」「最新のコードと同期しているか」を確認し、不要なコメントは削除、説明不足な箇所は追記する。
+
+---
+
+上記を踏まえ、**プロジェクト全体として約20～40%**、\*\*関数レベルで10～30%\*\*を目安にコメント量を調整すると、可読性と保守性のバランスを最適化しやすくなります。
+
+[1]: https://www.software.com/engineering-metrics/comment-to-code-ratio?utm_source=chatgpt.com "Comment to code ratio | Engineering Metrics Library - Software.com"
+[2]: https://www.mathworks.com/help/bugfinder/ref/functioncommentdensity.html?utm_source=chatgpt.com "Function Comment Density - Ratio of number of ... - MathWorks"
+[3]: https://dirkriehle.com/wp-content/uploads/2009/02/icse-2009-nier-for-web.pdf?utm_source=chatgpt.com "[PDF] The Comment Density of Open Source Software Code"
+[4]: https://www.reddit.com/r/programming/comments/9laks/whats_your_comment_to_code_ratio/?utm_source=chatgpt.com "What's your comment to code ratio? : r/programming - Reddit"
+[5]: https://www.researchgate.net/publication/221555173_The_Comment_Density_of_Open_Source_Software_Code?utm_source=chatgpt.com "The Comment Density of Open Source Software Code - ResearchGate"
+[6]: https://blog.codacy.com/code-quality-metrics?utm_source=chatgpt.com "7 Metrics for Measuring Code Quality - Codacy | Blog"
+[7]: https://community.sonarsource.com/t/a-rule-for-ensuring-the-number-of-new-comment-lines-is-less-than-a-specific-percentage/118104?utm_source=chatgpt.com "A rule for ensuring the number of new comment lines is less than a ..."
+[8]: https://en.wikipedia.org/wiki/Comment_%28computer_programming%29?utm_source=chatgpt.com "Comment (computer programming)"
+[9]: https://arxiv.org/abs/2209.08165?utm_source=chatgpt.com "A Decade of Code Comment Quality Assessment: A Systematic Literature Review"

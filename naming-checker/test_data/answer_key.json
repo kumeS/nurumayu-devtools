@@ -1,0 +1,362 @@
+{
+  "description": "命名規則チェッカーのテストデータ正解データ",
+  "version": "1.0.0",
+  "test_files": {
+    "good_naming.js": {
+      "expected_violations": 0,
+      "description": "正しい命名規則に従ったコード"
+    },
+    "bad_naming.js": {
+      "expected_violations": 50,
+      "description": "50パターンの命名規則違反を含むコード",
+      "violation_breakdown": {
+        "camelCase": 15,
+        "PascalCase": 10,
+        "CONSTANT_NAMING": 10,
+        "SNAKE_CASE": 8,
+        "LENGTH": 7
+      },
+      "detailed_violations": [
+        {
+          "line": 10,
+          "type": "SNAKE_CASE",
+          "variable": "user_name",
+          "severity": "CRITICAL",
+          "message": "Variable should use camelCase, not snake_case"
+        },
+        {
+          "line": 11,
+          "type": "SNAKE_CASE",
+          "variable": "user_age",
+          "severity": "CRITICAL"
+        },
+        {
+          "line": 12,
+          "type": "SNAKE_CASE",
+          "variable": "is_active",
+          "severity": "CRITICAL"
+        },
+        {
+          "line": 13,
+          "type": "SNAKE_CASE",
+          "variable": "total_count",
+          "severity": "CRITICAL"
+        },
+        {
+          "line": 14,
+          "type": "SNAKE_CASE",
+          "variable": "max_retry_attempts",
+          "severity": "CRITICAL"
+        },
+        {
+          "line": 17,
+          "type": "CAMEL_CASE",
+          "variable": "UserProfile",
+          "severity": "CRITICAL",
+          "message": "Variable should start with lowercase"
+        },
+        {
+          "line": 18,
+          "type": "CAMEL_CASE",
+          "variable": "DatabaseConfig",
+          "severity": "CRITICAL"
+        },
+        {
+          "line": 19,
+          "type": "CAMEL_CASE",
+          "variable": "ApiResponse",
+          "severity": "CRITICAL"
+        },
+        {
+          "line": 22,
+          "type": "CAMEL_CASE",
+          "variable": "username",
+          "severity": "INFO",
+          "message": "Might lack clarity without camelCase"
+        },
+        {
+          "line": 23,
+          "type": "CAMEL_CASE",
+          "variable": "useraddress",
+          "severity": "INFO"
+        },
+        {
+          "line": 26,
+          "type": "CAMEL_CASE",
+          "variable": "Username",
+          "severity": "CRITICAL"
+        },
+        {
+          "line": 27,
+          "type": "CAMEL_CASE",
+          "variable": "MaxCount",
+          "severity": "CRITICAL"
+        },
+        {
+          "line": 42,
+          "type": "PASCAL_CASE",
+          "class": "userModel",
+          "severity": "CRITICAL",
+          "message": "Class names should start with uppercase"
+        },
+        {
+          "line": 46,
+          "type": "PASCAL_CASE",
+          "class": "databaseConnection",
+          "severity": "CRITICAL"
+        },
+        {
+          "line": 50,
+          "type": "PASCAL_CASE",
+          "class": "apiService",
+          "severity": "CRITICAL"
+        },
+        {
+          "line": 55,
+          "type": "PASCAL_CASE",
+          "class": "user_profile",
+          "severity": "CRITICAL"
+        },
+        {
+          "line": 59,
+          "type": "PASCAL_CASE",
+          "class": "database_manager",
+          "severity": "CRITICAL"
+        },
+        {
+          "line": 64,
+          "type": "PASCAL_CASE",
+          "class": "user",
+          "severity": "CRITICAL"
+        },
+        {
+          "line": 68,
+          "type": "PASCAL_CASE",
+          "class": "product",
+          "severity": "CRITICAL"
+        },
+        {
+          "line": 73,
+          "type": "PASCAL_CASE",
+          "class": "USER",
+          "severity": "CRITICAL"
+        },
+        {
+          "line": 77,
+          "type": "PASCAL_CASE",
+          "class": "ADMIN",
+          "severity": "CRITICAL"
+        },
+        {
+          "line": 82,
+          "type": "PASCAL_CASE",
+          "class": "User_Manager",
+          "severity": "CRITICAL"
+        },
+        {
+          "line": 91,
+          "type": "CONSTANT_NAMING",
+          "variable": "maxUsers",
+          "severity": "WARNING",
+          "message": "Constants should be UPPER_SNAKE_CASE"
+        },
+        {
+          "line": 92,
+          "type": "CONSTANT_NAMING",
+          "variable": "apiEndpoint",
+          "severity": "WARNING"
+        },
+        {
+          "line": 93,
+          "type": "CONSTANT_NAMING",
+          "variable": "defaultTimeout",
+          "severity": "WARNING"
+        },
+        {
+          "line": 94,
+          "type": "CONSTANT_NAMING",
+          "variable": "errorMessage",
+          "severity": "WARNING"
+        },
+        {
+          "line": 97,
+          "type": "CONSTANT_NAMING",
+          "variable": "MaxRetries",
+          "severity": "WARNING"
+        },
+        {
+          "line": 98,
+          "type": "CONSTANT_NAMING",
+          "variable": "ApiKey",
+          "severity": "WARNING"
+        },
+        {
+          "line": 99,
+          "type": "CONSTANT_NAMING",
+          "variable": "DatabaseUrl",
+          "severity": "WARNING"
+        },
+        {
+          "line": 102,
+          "type": "CONSTANT_NAMING",
+          "variable": "max_connections",
+          "severity": "WARNING"
+        },
+        {
+          "line": 103,
+          "type": "CONSTANT_NAMING",
+          "variable": "api_version",
+          "severity": "WARNING"
+        },
+        {
+          "line": 104,
+          "type": "CONSTANT_NAMING",
+          "variable": "default_language",
+          "severity": "WARNING"
+        },
+        {
+          "line": 111,
+          "type": "SNAKE_CASE",
+          "function": "calculate_total",
+          "severity": "CRITICAL"
+        },
+        {
+          "line": 115,
+          "type": "SNAKE_CASE",
+          "function": "validate_email",
+          "severity": "CRITICAL"
+        },
+        {
+          "line": 119,
+          "type": "SNAKE_CASE",
+          "function": "format_currency",
+          "severity": "CRITICAL"
+        },
+        {
+          "line": 124,
+          "type": "CAMEL_CASE",
+          "function": "CalculateDiscount",
+          "severity": "CRITICAL"
+        },
+        {
+          "line": 128,
+          "type": "CAMEL_CASE",
+          "function": "ValidatePassword",
+          "severity": "CRITICAL"
+        },
+        {
+          "line": 133,
+          "type": "CAMEL_CASE",
+          "function": "getuser",
+          "severity": "INFO"
+        },
+        {
+          "line": 137,
+          "type": "CAMEL_CASE",
+          "function": "deleteitem",
+          "severity": "INFO"
+        },
+        {
+          "line": 140,
+          "type": "SNAKE_CASE",
+          "function": "get_User_ById",
+          "severity": "CRITICAL"
+        },
+        {
+          "line": 149,
+          "type": "LENGTH",
+          "variable": "x",
+          "severity": "INFO",
+          "message": "Variable name too short"
+        },
+        {
+          "line": 150,
+          "type": "LENGTH",
+          "variable": "y",
+          "severity": "INFO"
+        },
+        {
+          "line": 151,
+          "type": "LENGTH",
+          "variable": "z",
+          "severity": "INFO"
+        },
+        {
+          "line": 154,
+          "type": "LENGTH",
+          "variable": "thisIsAnExtremelyLongVariableNameThatExceedsTheMaximumAllowedLengthForVariableNames",
+          "severity": "INFO",
+          "message": "Variable name too long"
+        },
+        {
+          "line": 155,
+          "type": "LENGTH",
+          "variable": "anotherVeryLongVariableNameThatShouldTriggerALengthViolationWarning",
+          "severity": "INFO"
+        },
+        {
+          "line": 158,
+          "type": "LENGTH",
+          "variable": "usr",
+          "severity": "INFO"
+        },
+        {
+          "line": 159,
+          "type": "LENGTH",
+          "variable": "btn",
+          "severity": "INFO"
+        }
+      ]
+    }
+  },
+  "detection_targets": {
+    "camelCase_violations": {
+      "patterns": [
+        "snake_case in variables",
+        "PascalCase in variables",
+        "all lowercase without separation",
+        "uppercase start in variables"
+      ],
+      "expected_count": 15
+    },
+    "PascalCase_violations": {
+      "patterns": [
+        "camelCase in class names",
+        "snake_case in class names",
+        "all lowercase class names",
+        "all uppercase class names",
+        "underscore in class names"
+      ],
+      "expected_count": 10
+    },
+    "constant_violations": {
+      "patterns": [
+        "camelCase in const declarations",
+        "PascalCase in const declarations",
+        "lowercase snake_case in const"
+      ],
+      "expected_count": 10
+    },
+    "function_violations": {
+      "patterns": [
+        "snake_case in function names",
+        "PascalCase in function names",
+        "all lowercase without separation"
+      ],
+      "expected_count": 8
+    },
+    "length_violations": {
+      "patterns": [
+        "single character names",
+        "names exceeding 50 characters",
+        "unclear abbreviations"
+      ],
+      "expected_count": 7
+    }
+  },
+  "accuracy_targets": {
+    "minimum_detection_rate": 0.85,
+    "target_detection_rate": 0.95,
+    "false_positive_tolerance": 0.05
+  }
+}

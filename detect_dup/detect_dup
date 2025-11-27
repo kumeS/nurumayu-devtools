@@ -1,1778 +1,359 @@
-#!/bin/bash
-#
-# detect_dup_modular.sh - JavaScript重複検出ツール（モジュラー版）
-#
-# 使い方:
-#   ./detect_dup_modular.sh [OPTIONS] <TARGET_DIR> [WINDOW_SIZE]
-#
-# オプション:
-#   -a, --all              すべての検出を実行（デフォルト）
-#   -b, --basic            基本的な重複検出のみ
-#   -s, --structural       構造的重複検出のみ
-#   -p, --patterns         パターンベース検出のみ
-#   -f, --functional       関数・機能的重複検出のみ
-#   -t, --text             テキストレベル重複検出のみ
-#   -w, --window-scan      複数ウィンドウサイズでスキャン
-#   -r, --range START:END  ウィンドウサイズ範囲指定 (例: 3:10)
-#   -l, --list             利用可能な検出タイプを表示
-#   -o, --output FORMAT    出力形式 (console|json|csv)
-#   -v, --verbose          詳細出力
-#   -h, --help             このヘルプを表示
-#
-set -euo pipefail
+#!/usr/bin/env bash
+
+# ======================================
+# detect_dup - JavaScript重複コード検出ツール
+# ======================================
+# シンプルで動作する最小版
+
+set -o pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# カラー定義（先に定義）
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+RESET='\033[0m'
+
+# 共通ライブラリ読み込み
+if [ -f "$SCRIPT_DIR/../lib/common.sh" ]; then
+    source "$SCRIPT_DIR/../lib/common.sh"
+fi
+
+VERSION="1.0.0"
 
 # デフォルト設定
 DEFAULT_WINDOW=5
 OUTPUT_FORMAT="console"
-VERBOSE=false
-WINDOW_SCAN=false
-WINDOW_RANGE=""
+DETECTION_TYPE="all"
+TARGET_DIR=""
+WINDOW_SIZE=$DEFAULT_WINDOW
 
-# 検出フラグ
-RUN_ALL=true
-RUN_BASIC=false
-RUN_STRUCTURAL=false
-RUN_PATTERNS=false
-RUN_FUNCTIONAL=false
-RUN_TEXT=false
+# 一時ディレクトリ
+TMP_DIR=$(mktemp -d)
+trap "rm -rf $TMP_DIR" EXIT
 
-# カラー出力
-if [[ -t 1 ]]; then
-  RED='\033[0;31m'
-  GREEN='\033[0;32m'
-  YELLOW='\033[1;33m'
-  BLUE='\033[0;34m'
-  PURPLE='\033[0;35m'
-  CYAN='\033[0;36m'
-  NC='\033[0m' # No Color
+# ハッシュコマンド検出
+if command -v md5sum &> /dev/null; then
+    HASH_CMD="md5sum"
+elif command -v md5 &> /dev/null; then
+    HASH_CMD="md5 -q"
 else
-  RED='' GREEN='' YELLOW='' BLUE='' PURPLE='' CYAN='' NC=''
+    echo "Error: md5sum or md5 command not found"
+    exit 1
 fi
 
-# ログ関数
-log() { 
-  if [[ "$VERBOSE" == true ]]; then
-    echo -e "${BLUE}[$(date '+%H:%M:%S')]${NC} $*" >&2
-  fi
-}
-
-info() { echo -e "${GREEN}[INFO]${NC} $*" >&2; }
-warn() { echo -e "${YELLOW}[WARN]${NC} $*" >&2; }
-error() { echo -e "${RED}[ERROR]${NC} $*" >&2; }
-section() { echo -e "\n${PURPLE}=== $* ===${NC}"; }
-
+# ======================================
 # ヘルプ表示
+# ======================================
 show_help() {
-  cat << 'EOF'
-detect_dup_modular.sh - JavaScript重複検出ツール
+    cat << EOF
+${BOLD}${CYAN}detect_dup${RESET} - JavaScript 重複コード検出ツール v${VERSION}
 
-使い方:
-  ./detect_dup_modular.sh [OPTIONS] <TARGET_DIR> [WINDOW_SIZE]
+${BOLD}使用方法:${RESET}
+    detect_dup [OPTIONS] <target-directory> [window-size]
 
-検出タイプ:
-  -a, --all              すべての検出を実行（デフォルト）
-  -b, --basic            基本的な重複検出のみ
-  -s, --structural       構造的重複検出のみ  
-  -p, --patterns         パターンベース検出のみ
-  -f, --functional       関数・機能的重複検出のみ
-  -t, --text             テキストレベル重複検出のみ
+${BOLD}オプション:${RESET}
+    ${GREEN}-h, --help${RESET}              このヘルプを表示
+    ${GREEN}-v, --version${RESET}           バージョン情報を表示
+    ${GREEN}-a, --all${RESET}               全検出を実行（デフォルト）
+    ${GREEN}-b, --basic${RESET}             基本的な重複のみ検出
+    ${GREEN}-t, --text${RESET}              テキストレベル重複のみ
+    ${GREEN}-o, --output <format>${RESET}   出力形式 (console/json/csv)
 
-ウィンドウオプション:
-  -w, --window-scan      複数ウィンドウサイズでスキャン (3,5,7,10,15,20)
-  -r, --range START:END  ウィンドウサイズ範囲指定 (例: 3:10)
+${BOLD}引数:${RESET}
+    target-directory    スキャン対象ディレクトリ
+    window-size         ウィンドウサイズ（行数、デフォルト: 5）
 
-出力オプション:
-  -o, --output FORMAT    出力形式 (console|json|csv)
-  -v, --verbose          詳細出力を有効化
+${BOLD}検出タイプ:${RESET}
+    ${CYAN}BASIC${RESET}       - 完全一致する重複コードブロック
+    ${CYAN}TEXT${RESET}        - テキストレベルの類似コード
+    ${CYAN}MULTILINE${RESET}   - 複数行にわたる重複
 
-その他:
-  -l, --list             利用可能な検出タイプを表示
-  -h, --help             このヘルプを表示
+${BOLD}使用例:${RESET}
+    # 基本的な使用
+    detect_dup ./src
 
-例:
-  ./detect_dup_modular.sh -b ./src 5              # 基本検出のみ
-  ./detect_dup_modular.sh -s -o json ./project    # 構造検出をJSON出力
-  ./detect_dup_modular.sh -p -f ./src             # パターン+関数検出
-  ./detect_dup_modular.sh -v -a ./project 10      # 全検出、詳細出力
-  ./detect_dup_modular.sh -w ./src                # 複数ウィンドウサイズでスキャン
-  ./detect_dup_modular.sh -r 5:15 ./project       # ウィンドウサイズ5-15でスキャン
-  ./detect_dup_modular.sh -t -w -o json ./src     # テキスト検出を複数ウィンドウで実行
+    # ウィンドウサイズ指定
+    detect_dup ./src 10
 
-検出タイプ詳細:
-  basic      : 多行テキスト重複、基本的な同一コード
-  structural : 制御構造、AST基盤の構造的重複
-  patterns   : 正規表現、API使用パターン
-  functional : 関数定義、メソッド重複
-  text       : 文字列、コメント、リテラル重複
+    # JSON出力
+    detect_dup --output json ./project
+
+    # 基本検出のみ
+    detect_dup --basic ./src
+
+${BOLD}出力例:${RESET}
+    ${RED}[BASIC_W5]${RESET} Hash: a1b2c3d4
+      src/user.js:10
+      src/admin.js:25
+
 EOF
 }
 
-# 検出タイプ一覧表示
-show_detection_types() {
-  cat << 'EOF'
-利用可能な検出タイプ:
-
-📝 TEXT (テキストレベル)
-  • 多行テキスト重複（スライディングウィンドウ）
-  • 文字列リテラル重複
-  • コメント重複
-  • 変数名パターン
-
-🏗️  STRUCTURAL (構造的)
-  • 制御フロー重複（if-else, switch）
-  • ループ構造重複（for, while）
-  • try-catch構造
-  • ネスト構造パターン
-
-🔧 FUNCTIONAL (関数・機能的)
-  • 関数定義重複
-  • メソッド実装重複
-  • アロー関数パターン
-  • コールバック関数
-
-🎯 PATTERNS (パターンベース)
-  • API使用パターン
-  • 配列操作パターン（map, filter, reduce）
-  • Promiseチェーン
-  • 正規表現パターン
-
-⚡ BASIC (基本的)
-  • 多行重複（指定行数）
-  • 単純なコピー&ペースト検出
-  • 識別子正規化による検出
-EOF
+# ======================================
+# 基本的な重複検出
+# ======================================
+detect_basic() {
+    local target="$1"
+    local window="$2"
+    
+    echo "[INFO] 基本的な重複検出を実行中 (ウィンドウサイズ: $window)" >&2
+    
+    # JavaScriptファイルを検索
+    find "$target" -name "*.js" -type f \
+        ! -path "*/node_modules/*" \
+        ! -path "*/dist/*" \
+        ! -path "*/build/*" \
+        ! -path "*/.git/*" | while read -r file; do
+        
+        # ファイルを読み込み、ウィンドウサイズ分のブロックを作成
+        awk -v ws="$window" '
+        {
+            lines[NR] = $0
+        }
+        END {
+            for (i = 1; i <= NR - ws + 1; i++) {
+                block = ""
+                for (j = i; j < i + ws; j++) {
+                    block = block lines[j] "\n"
+                }
+                # 空白行のみのブロックをスキップ
+                if (block !~ /^[[:space:]]*$/) {
+                    print i ":" block
+                }
+            }
+        }
+        ' "$file" | while IFS=: read -r line_num block; do
+            # ブロックをハッシュ化
+            hash=$(echo "$block" | $HASH_CMD | awk '{print $1}')
+            echo "$hash	$file:$line_num"
+        done
+    done > "$TMP_DIR/basic_hashes.txt"
+    
+    # 重複を検出
+    if [ -s "$TMP_DIR/basic_hashes.txt" ]; then
+        sort "$TMP_DIR/basic_hashes.txt" | awk '
+        {
+            hash = $1
+            location = $2
+            if (hash in locations) {
+                locations[hash] = locations[hash] "," location
+                counts[hash]++
+            } else {
+                locations[hash] = location
+                counts[hash] = 1
+            }
+        }
+        END {
+            for (hash in locations) {
+                if (counts[hash] > 1) {
+                    print hash "\t" locations[hash]
+                }
+            }
+        }
+        ' | while IFS=$'\t' read -r hash locs; do
+            output_result "BASIC_W${window}" "$hash" "$locs"
+        done
+    fi
 }
 
-# 引数解析
-parse_arguments() {
-  while [[ $# -gt 0 ]]; do
-    case $1 in
-      -a|--all)
-        RUN_ALL=true
-        shift
-        ;;
-      -b|--basic)
-        RUN_ALL=false
-        RUN_BASIC=true
-        shift
-        ;;
-      -s|--structural)
-        RUN_ALL=false
-        RUN_STRUCTURAL=true
-        shift
-        ;;
-      -p|--patterns)
-        RUN_ALL=false
-        RUN_PATTERNS=true
-        shift
-        ;;
-      -f|--functional)
-        RUN_ALL=false
-        RUN_FUNCTIONAL=true
-        shift
-        ;;
-      -t|--text)
-        RUN_ALL=false
-        RUN_TEXT=true
-        shift
-        ;;
-      -w|--window-scan)
-        WINDOW_SCAN=true
-        shift
-        ;;
-      -r|--range)
-        WINDOW_RANGE="$2"
-        shift 2
-        ;;
-      -o|--output)
-        OUTPUT_FORMAT="$2"
-        shift 2
-        ;;
-      -v|--verbose)
-        VERBOSE=true
-        shift
-        ;;
-      -l|--list)
-        show_detection_types
-        exit 0
-        ;;
-      -h|--help)
+# ======================================
+# テキストレベル重複検出
+# ======================================
+detect_text() {
+    local target="$1"
+    local window="$2"
+    
+    echo "[INFO] テキストレベル重複検出を実行中" >&2
+    
+    # 文字列リテラルの重複を検出
+    find "$target" -name "*.js" -type f \
+        ! -path "*/node_modules/*" \
+        ! -path "*/dist/*" | while read -r file; do
+        
+        grep -n '"[^"]\{20,\}"' "$file" 2>/dev/null | while IFS=: read -r line_num content; do
+            # 文字列を抽出
+            string=$(echo "$content" | grep -o '"[^"]*"' | head -1)
+            if [ -n "$string" ]; then
+                hash=$(echo "$string" | $HASH_CMD | awk '{print $1}')
+                echo "$hash	$file:$line_num	$string"
+            fi
+        done
+    done > "$TMP_DIR/text_hashes.txt"
+    
+    # 重複を検出
+    if [ -s "$TMP_DIR/text_hashes.txt" ]; then
+        sort "$TMP_DIR/text_hashes.txt" | awk -F'\t' '
+        {
+            hash = $1
+            location = $2
+            if (hash in locations) {
+                locations[hash] = locations[hash] "," location
+                counts[hash]++
+            } else {
+                locations[hash] = location
+                counts[hash] = 1
+            }
+        }
+        END {
+            for (hash in locations) {
+                if (counts[hash] > 1) {
+                    print hash "\t" locations[hash]
+                }
+            }
+        }
+        ' | while IFS=$'\t' read -r hash locs; do
+            output_result "TEXT_STRING" "$hash" "$locs"
+        done
+    fi
+}
+
+# ======================================
+# 結果出力
+# ======================================
+output_result() {
+    local type="$1"
+    local hash="$2"
+    local locations="$3"
+    
+    case "$OUTPUT_FORMAT" in
+        json)
+            # JSON形式
+            echo "  {"
+            echo "    \"type\": \"$type\","
+            echo "    \"hash\": \"$hash\","
+            echo "    \"locations\": ["
+            local first=true
+            IFS=',' read -ra LOCS <<< "$locations"
+            for loc in "${LOCS[@]}"; do
+                if [ "$first" = true ]; then
+                    first=false
+                else
+                    echo ","
+                fi
+                echo -n "      \"$loc\""
+            done
+            echo ""
+            echo "    ]"
+            echo "  }"
+            ;;
+        csv)
+            # CSV形式
+            echo "\"$type\",\"$hash\",\"$locations\""
+            ;;
+        console|*)
+            # コンソール形式
+            echo -e "${RED}[$type]${RESET} Hash: ${BOLD}${hash:0:8}${RESET}"
+            IFS=',' read -ra LOCS <<< "$locations"
+            for loc in "${LOCS[@]}"; do
+                echo -e "  ${GREEN}$loc${RESET}"
+            done
+            echo ""
+            ;;
+    esac
+}
+
+# ======================================
+# メイン処理
+# ======================================
+main() {
+    if [ $# -eq 0 ]; then
         show_help
         exit 0
-        ;;
-      -*)
-        error "不明なオプション: $1"
-        echo "ヘルプは -h または --help で確認してください。"
+    fi
+    
+    # 引数解析
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -h|--help)
+                show_help
+                exit 0
+                ;;
+            -v|--version)
+                echo "detect_dup v$VERSION"
+                exit 0
+                ;;
+            -a|--all)
+                DETECTION_TYPE="all"
+                shift
+                ;;
+            -b|--basic)
+                DETECTION_TYPE="basic"
+                shift
+                ;;
+            -t|--text)
+                DETECTION_TYPE="text"
+                shift
+                ;;
+            -o|--output)
+                OUTPUT_FORMAT="$2"
+                shift 2
+                ;;
+            -*)
+                echo "Error: Unknown option: $1" >&2
+                echo "Use --help for usage information" >&2
+                exit 1
+                ;;
+            *)
+                if [ -z "$TARGET_DIR" ]; then
+                    TARGET_DIR="$1"
+                elif [ -z "$WINDOW_SIZE" ] || [ "$WINDOW_SIZE" = "$DEFAULT_WINDOW" ]; then
+                    WINDOW_SIZE="$1"
+                fi
+                shift
+                ;;
+        esac
+    done
+    
+    # ターゲットディレクトリ必須チェック
+    if [ -z "$TARGET_DIR" ]; then
+        echo "Error: Target directory is required" >&2
+        echo "Use --help for usage information" >&2
         exit 1
-        ;;
-      *)
-        break
-        ;;
+    fi
+    
+    if [ ! -d "$TARGET_DIR" ]; then
+        echo "Error: Directory not found: $TARGET_DIR" >&2
+        exit 1
+    fi
+    
+    # JSON/CSVヘッダー
+    if [ "$OUTPUT_FORMAT" = "json" ]; then
+        echo "{"
+        echo "  \"tool\": \"detect_dup\","
+        echo "  \"version\": \"$VERSION\","
+        echo "  \"target\": \"$TARGET_DIR\","
+        echo "  \"window_size\": $WINDOW_SIZE,"
+        echo "  \"duplicates\": ["
+    elif [ "$OUTPUT_FORMAT" = "csv" ]; then
+        echo "type,hash,locations"
+    fi
+    
+    # 検出実行
+    case "$DETECTION_TYPE" in
+        basic)
+            detect_basic "$TARGET_DIR" "$WINDOW_SIZE"
+            ;;
+        text)
+            detect_text "$TARGET_DIR" "$WINDOW_SIZE"
+            ;;
+        all|*)
+            detect_basic "$TARGET_DIR" "$WINDOW_SIZE"
+            detect_text "$TARGET_DIR" "$WINDOW_SIZE"
+            ;;
     esac
-  done
-
-  # 位置引数の処理
-  if [[ $# -lt 1 ]]; then
-    error "TARGET_DIR が指定されていません"
-    show_help
-    exit 1
-  fi
-
-  TARGET_DIR="$1"
-  
-  # ウィンドウサイズの処理
-  if [[ "$WINDOW_SCAN" == true || -n "$WINDOW_RANGE" ]]; then
-    # ウィンドウスキャンモードの場合、WINDOW_SIZE引数は無視
-    WINDOW="$DEFAULT_WINDOW"  # デフォルト値（実際には使用されない）
-  else
-    WINDOW="${2:-$DEFAULT_WINDOW}"
-  fi
-
-  # 入力検証
-  if [[ ! -d "$TARGET_DIR" ]]; then
-    error "ディレクトリが存在しません: $TARGET_DIR"
-    exit 1
-  fi
-
-  # ウィンドウ範囲の検証
-  if [[ -n "$WINDOW_RANGE" ]]; then
-    if [[ ! "$WINDOW_RANGE" =~ ^[0-9]+:[0-9]+$ ]]; then
-      error "ウィンドウ範囲は 'START:END' 形式で指定してください: $WINDOW_RANGE"
-      exit 1
+    
+    # JSON終了
+    if [ "$OUTPUT_FORMAT" = "json" ]; then
+        echo "  ]"
+        echo "}"
     fi
     
-    local start_window end_window
-    start_window=$(echo "$WINDOW_RANGE" | cut -d: -f1)
-    end_window=$(echo "$WINDOW_RANGE" | cut -d: -f2)
-    
-    if [[ "$start_window" -ge "$end_window" ]]; then
-      error "開始ウィンドウサイズは終了サイズより小さくしてください: $WINDOW_RANGE"
-      exit 1
-    fi
-    
-    if [[ "$start_window" -lt 1 || "$end_window" -gt 50 ]]; then
-      error "ウィンドウサイズは1-50の範囲で指定してください: $WINDOW_RANGE"
-      exit 1
-    fi
-  fi
-
-  if ! [[ "$WINDOW" =~ ^[0-9]+$ ]] || [[ "$WINDOW" -lt 1 ]]; then
-    error "WINDOW_SIZE は正の整数である必要があります: $WINDOW"
-    exit 1
-  fi
-
-  if [[ ! "$OUTPUT_FORMAT" =~ ^(console|json|csv)$ ]]; then
-    error "出力形式は console, json, csv のいずれかである必要があります: $OUTPUT_FORMAT"
-    exit 1
-  fi
+    echo -e "\n${GREEN}✓ 重複検出完了${RESET}" >&2
 }
 
-# クロスプラットフォーム対応
-setup_platform() {
-  # realpath対応
-  if command -v realpath >/dev/null 2>&1; then
-    GET_REL_PATH() { 
-      realpath --relative-to="$1" "$2" 2>/dev/null || echo "$2"
-    }
-  elif command -v python3 >/dev/null 2>&1; then
-    GET_REL_PATH() {
-      python3 -c "import os; print(os.path.relpath('$2', '$1'))" 2>/dev/null || echo "$2"
-    }
-  else
-    GET_REL_PATH() { echo "$2"; }
-  fi
-
-  # ハッシュコマンド
-  if command -v md5sum >/dev/null 2>&1; then
-    HASH_CMD="md5sum"
-  elif command -v md5 >/dev/null 2>&1; then
-    HASH_CMD="md5"
-  else
-    error "MD5ハッシュコマンドが見つかりません"
-    exit 1
-  fi
-}
-
-# 一時ディレクトリ設定
-setup_temp() {
-  TMP=$(mktemp -d)
-  trap 'rm -rf "$TMP"' EXIT INT TERM
-
-  NORM="$TMP/norm"
-  RESULTS="$TMP/results"
-  mkdir -p "$NORM" "$RESULTS"
-
-  log "一時ディレクトリ作成: $TMP"
-}
-
-# JavaScript正規化
-normalize_js() {
-  local input="$1" output="$2"
-  
-  # Node.jsが利用可能な場合
-  if command -v node >/dev/null 2>&1; then
-    node -e "
-      const fs = require('fs');
-      try {
-        let code = fs.readFileSync('$input', 'utf8');
-        
-        // コメント除去
-        code = code
-          .replace(/\/\*[\s\S]*?\*\//g, ' ')
-          .replace(/\/\/.*$/gm, ' ');
-        
-        // 文字列正規化
-        code = code
-          .replace(/(['\"\`])(?:\\\\.|(?!\1)[^\\\\])*\1/g, '\"STR\"')
-          .replace(/\b\d+\.?\d*\b/g, 'NUM')
-          .replace(/\b[a-zA-Z_$][a-zA-Z0-9_$]*\b/g, 'VAR');
-        
-        fs.writeFileSync('$output', code);
-      } catch(e) {
-        process.exit(1);
-      }
-    " 2>/dev/null && return 0
-  fi
-  
-  # フォールバック処理
-  sed -E '
-    s|//[^"'"'"']*$||g
-    s|/\*[^*]*\*/||g
-    s/"[^"]*"/"STR"/g
-    s/'"'"'[^'"'"']*'"'"'/"STR"/g
-    s/\b[0-9]+(\.[0-9]+)?\b/NUM/g
-    s/\b[a-zA-Z_$][a-zA-Z0-9_$]*\b/VAR/g
-  ' "$input" > "$output"
-}
-
-# ファイル準備
-prepare_files() {
-  log "JavaScript ファイルを検索中..."
-  
-  find "$TARGET_DIR" -name "*.js" -type f ! -path "*/node_modules/*" ! -name "*.min.js" > "$TMP/js_files"
-  
-  local file_count
-  file_count=$(wc -l < "$TMP/js_files")
-  
-  if [[ "$file_count" -eq 0 ]]; then
-    warn "JavaScript ファイルが見つかりません"
-    exit 0
-  fi
-  
-  info "$file_count 個のJavaScriptファイルを発見"
-  
-  log "ファイル正規化中..."
-  while IFS= read -r f; do
-    local rel_path
-    rel_path=$(GET_REL_PATH "$TARGET_DIR" "$f")
-    local out="$NORM/$rel_path"
-    mkdir -p "$(dirname "$out")"
-    normalize_js "$f" "$out"
-  done < "$TMP/js_files"
-  
-  log "正規化完了"
-}
-
-# ウィンドウサイズリスト生成
-generate_window_sizes() {
-  if [[ "$WINDOW_SCAN" == true ]]; then
-    echo "3 5 7 10 15 20"
-  elif [[ -n "$WINDOW_RANGE" ]]; then
-    local start_window end_window
-    start_window=$(echo "$WINDOW_RANGE" | cut -d: -f1)
-    end_window=$(echo "$WINDOW_RANGE" | cut -d: -f2)
-    seq "$start_window" "$end_window"
-  else
-    echo "$WINDOW"
-  fi
-}
-
-# 複数ウィンドウでの検出実行
-run_multi_window_detection() {
-  local detect_function="$1"
-  local window_sizes
-  window_sizes=$(generate_window_sizes)
-  
-  for window_size in $window_sizes; do
-    log "ウィンドウサイズ $window_size で検出実行中..."
-    CURRENT_WINDOW="$window_size"
-    $detect_function
-  done
-}
-# 出力ヘルパー関数
-output_result() {
-  local type="$1" hash="$2" locations="$3" window_size="${4:-}"
-  
-  # ウィンドウサイズ情報を含める
-  local full_type="$type"
-  if [[ -n "$window_size" ]]; then
-    full_type="${type}_W${window_size}"
-  fi
-  
-  case "$OUTPUT_FORMAT" in
-    json)
-      local window_field=""
-      if [[ -n "$window_size" ]]; then
-        window_field=",\"window_size\":$window_size"
-      fi
-      echo "{\"type\":\"$full_type\",\"hash\":\"$hash\",\"locations\":[$locations]$window_field}," >> "$RESULTS/output.json"
-      ;;
-    csv)
-      echo "$full_type,$hash,\"$locations\",$window_size" >> "$RESULTS/output.csv"
-      ;;
-    console|*)
-      if [[ -n "$window_size" ]]; then
-        echo -e "${CYAN}[$full_type]${NC} Hash: ${hash:0:8} ${YELLOW}(Window: $window_size)${NC}"
-      else
-        echo -e "${CYAN}[$type]${NC} Hash: ${hash:0:8}"
-      fi
-      echo "$locations" | sed 's/^/  /'
-      echo
-      ;;
-  esac
-}
-
-# === 検出関数群 ===
-
-# テキストレベル重複検出
-detect_text_duplicates() {
-  local window_size="${CURRENT_WINDOW:-$WINDOW}"
-  
-  section "テキストレベル重複検出 (ウィンドウサイズ: $window_size)"
-  
-  # 1. 多行テキスト重複
-  log "多行重複検出中 (ウィンドウ: $window_size 行)"
-  
-  find "$NORM" -name "*.js" -type f | while read -r f; do
-    awk -v window="$window_size" -v file="$f" '
-    {
-      lines[NR] = $0
-      if (NR >= window) {
-        block = ""
-        for (i = NR - window + 1; i <= NR; i++) {
-          block = block lines[i] "\n"
-        }
-        cmd = "echo \"" block "\" | '"$HASH_CMD"'"
-        cmd | getline hash
-        close(cmd)
-        print substr(hash, 1, 32) "\t" file ":" (NR - window + 1)
-      }
-    }
-    ' "$f"
-  done > "$TMP/text_hashes_${window_size}"
-  
-  if [[ -s "$TMP/text_hashes_${window_size}" ]]; then
-    sort "$TMP/text_hashes_${window_size}" | uniq -d | while IFS=
-
-# 構造的重複検出
-detect_structural_duplicates() {
-  section "構造的重複検出"
-  
-  # 1. 制御フロー重複（if-else）
-  log "if-else構造重複検出中"
-  
-  find "$NORM" -name "*.js" -type f | while read -r f; do
-    grep -n "if\|else" "$f" | while IFS=: read -r line_num content; do
-      local normalized
-      normalized=$(echo "$content" | sed -E 's/VAR[0-9]*/VAR/g; s/NUM/NUM/g; s/[[:space:]]+//g')
-      local hash
-      hash=$(echo "$normalized" | $HASH_CMD | cut -d' ' -f1)
-      echo "$hash	$f:$line_num"
-    done
-  done > "$TMP/structural_if"
-  
-  if [[ -s "$TMP/structural_if" ]]; then
-    sort "$TMP/structural_if" | uniq -d | while IFS=$'\t' read -r hash location; do
-      local locations
-      locations=$(grep "^$hash" "$TMP/structural_if" | cut -f2 | sort | tr '\n' ',' | sed 's/,$//')
-      if [[ $(echo "$locations" | tr ',' '\n' | wc -l) -gt 1 ]]; then
-        output_result "STRUCTURAL_IF" "$hash" "$locations"
-      fi
-    done
-  fi
-  
-  # 2. ループ構造重複
-  log "ループ構造重複検出中"
-  
-  find "$NORM" -name "*.js" -type f | while read -r f; do
-    grep -n "for\|while" "$f" | while IFS=: read -r line_num content; do
-      local normalized
-      normalized=$(echo "$content" | sed -E 's/VAR[0-9]*/VAR/g; s/NUM/NUM/g; s/[[:space:]]+//g')
-      local hash
-      hash=$(echo "$normalized" | $HASH_CMD | cut -d' ' -f1)
-      echo "$hash	$f:$line_num"
-    done
-  done > "$TMP/structural_loop"
-  
-  if [[ -s "$TMP/structural_loop" ]]; then
-    sort "$TMP/structural_loop" | uniq -d | while IFS=$'\t' read -r hash location; do
-      local locations
-      locations=$(grep "^$hash" "$TMP/structural_loop" | cut -f2 | sort | tr '\n' ',' | sed 's/,$//')
-      if [[ $(echo "$locations" | tr ',' '\n' | wc -l) -gt 1 ]]; then
-        output_result "STRUCTURAL_LOOP" "$hash" "$locations"
-      fi
-    done
-  fi
-}
-
-# パターンベース重複検出
-detect_pattern_duplicates() {
-  section "パターンベース重複検出"
-  
-  # 1. 配列操作パターン
-  log "配列操作パターン検出中"
-  
-  find "$NORM" -name "*.js" -type f | while read -r f; do
-    grep -n "\.map\|\.filter\|\.reduce" "$f" | while IFS=: read -r line_num content; do
-      local pattern
-      pattern=$(echo "$content" | sed -E 's/\.map\([^)]*\)/.map(F)/g; s/\.filter\([^)]*\)/.filter(F)/g; s/\.reduce\([^)]*\)/.reduce(F)/g')
-      local hash
-      hash=$(echo "$pattern" | $HASH_CMD | cut -d' ' -f1)
-      echo "$hash	$f:$line_num"
-    done
-  done > "$TMP/pattern_array"
-  
-  if [[ -s "$TMP/pattern_array" ]]; then
-    sort "$TMP/pattern_array" | uniq -d | while IFS=$'\t' read -r hash location; do
-      local locations
-      locations=$(grep "^$hash" "$TMP/pattern_array" | cut -f2 | sort | tr '\n' ',' | sed 's/,$//')
-      if [[ $(echo "$locations" | tr ',' '\n' | wc -l) -gt 1 ]]; then
-        output_result "PATTERN_ARRAY" "$hash" "$locations"
-      fi
-    done
-  fi
-  
-  # 2. Promiseチェーン
-  log "Promiseチェーン検出中"
-  
-  find "$NORM" -name "*.js" -type f | while read -r f; do
-    grep -n "\.then\|\.catch" "$f" | while IFS=: read -r line_num content; do
-      local pattern
-      pattern=$(echo "$content" | sed -E 's/\.then\([^)]*\)/.then(F)/g; s/\.catch\([^)]*\)/.catch(F)/g')
-      local hash
-      hash=$(echo "$pattern" | $HASH_CMD | cut -d' ' -f1)
-      echo "$hash	$f:$line_num"
-    done
-  done > "$TMP/pattern_promise"
-  
-  if [[ -s "$TMP/pattern_promise" ]]; then
-    sort "$TMP/pattern_promise" | uniq -d | while IFS=$'\t' read -r hash location; do
-      local locations
-      locations=$(grep "^$hash" "$TMP/pattern_promise" | cut -f2 | sort | tr '\n' ',' | sed 's/,$//')
-      if [[ $(echo "$locations" | tr ',' '\n' | wc -l) -gt 1 ]]; then
-        output_result "PATTERN_PROMISE" "$hash" "$locations"
-      fi
-    done
-  fi
-}
-
-# 関数的重複検出
-detect_functional_duplicates() {
-  section "関数的重複検出"
-  
-  # 1. 関数定義重複
-  log "関数定義重複検出中"
-  
-  find "$NORM" -name "*.js" -type f | while read -r f; do
-    grep -n "function\|=>" "$f" | while IFS=: read -r line_num content; do
-      local normalized
-      normalized=$(echo "$content" | sed -E 's/function[[:space:]]+VAR/function VAR/g; s/VAR[0-9]*/VAR/g; s/[[:space:]]+//g')
-      local hash
-      hash=$(echo "$normalized" | $HASH_CMD | cut -d' ' -f1)
-      echo "$hash	$f:$line_num"
-    done
-  done > "$TMP/functional_def"
-  
-  if [[ -s "$TMP/functional_def" ]]; then
-    sort "$TMP/functional_def" | uniq -d | while IFS=$'\t' read -r hash location; do
-      local locations
-      locations=$(grep "^$hash" "$TMP/functional_def" | cut -f2 | sort | tr '\n' ',' | sed 's/,$//')
-      if [[ $(echo "$locations" | tr ',' '\n' | wc -l) -gt 1 ]]; then
-        output_result "FUNCTIONAL_DEF" "$hash" "$locations"
-      fi
-    done
-  fi
-}
-
-# 基本的重複検出
-detect_basic_duplicates() {
-  local window_size="${CURRENT_WINDOW:-$WINDOW}"
-  
-  section "基本的重複検出 (ウィンドウサイズ: $window_size)"
-  
-  # 多行重複（簡易版）
-  log "基本多行重複検出中"
-  
-  find "$NORM" -name "*.js" -type f | while read -r f; do
-    awk -v window="$window_size" -v file="$f" '
-    {
-      for(i=1; i<=NF; i++) {
-        if (NF >= window) {
-          block = ""
-          for(j=i; j<i+window && j<=NF; j++) {
-            block = block $j " "
-          }
-          if (length(block) > 10) {
-            cmd = "echo \"" block "\" | '"$HASH_CMD"'"
-            cmd | getline hash
-            close(cmd)
-            print substr(hash, 1, 32) "\t" file ":" NR
-          }
-        }
-      }
-    }
-    ' "$f"
-  done > "$TMP/basic_hashes_${window_size}"
-  
-  if [[ -s "$TMP/basic_hashes_${window_size}" ]]; then
-    sort "$TMP/basic_hashes_${window_size}" | uniq -d | while IFS=
-
-# 結果出力の初期化
-init_output() {
-  case "$OUTPUT_FORMAT" in
-    json)
-      echo "[" > "$RESULTS/output.json"
-      ;;
-    csv)
-      echo "type,hash,locations,window_size" > "$RESULTS/output.csv"
-      ;;
-  esac
-}
-
-# 結果出力の終了処理
-finalize_output() {
-  case "$OUTPUT_FORMAT" in
-    json)
-      # 最後のカンマを削除してJSONを閉じる
-      if [[ -s "$RESULTS/output.json" ]]; then
-        sed -i '$ s/,$//' "$RESULTS/output.json" 2>/dev/null || true
-      fi
-      echo "]" >> "$RESULTS/output.json"
-      cat "$RESULTS/output.json"
-      ;;
-    csv)
-      cat "$RESULTS/output.csv"
-      ;;
-    console)
-      section "検出完了"
-      info "重複検出処理が完了しました"
-      ;;
-  esac
-}
-
-# メイン実行関数
-main() {
-  parse_arguments "$@"
-  setup_platform
-  setup_temp
-  prepare_files
-  init_output
-  
-  # ウィンドウサイズ情報表示
-  local window_info
-  if [[ "$WINDOW_SCAN" == true ]]; then
-    window_info="複数ウィンドウスキャン (3,5,7,10,15,20)"
-  elif [[ -n "$WINDOW_RANGE" ]]; then
-    window_info="ウィンドウ範囲スキャン ($WINDOW_RANGE)"
-  else
-    window_info="固定ウィンドウサイズ ($WINDOW)"
-  fi
-  
-  info "重複検出開始: $TARGET_DIR ($window_info)"
-  
-  # 検出実行
-  if [[ "$WINDOW_SCAN" == true || -n "$WINDOW_RANGE" ]]; then
-    # 複数ウィンドウサイズでの検出
-    if [[ "$RUN_ALL" == true ]]; then
-      run_multi_window_detection detect_text_duplicates
-      detect_structural_duplicates  # 構造的検出はウィンドウサイズに依存しない
-      detect_pattern_duplicates
-      detect_functional_duplicates
-      run_multi_window_detection detect_basic_duplicates
-    else
-      [[ "$RUN_TEXT" == true ]] && run_multi_window_detection detect_text_duplicates
-      [[ "$RUN_STRUCTURAL" == true ]] && detect_structural_duplicates
-      [[ "$RUN_PATTERNS" == true ]] && detect_pattern_duplicates
-      [[ "$RUN_FUNCTIONAL" == true ]] && detect_functional_duplicates
-      [[ "$RUN_BASIC" == true ]] && run_multi_window_detection detect_basic_duplicates
-    fi
-  else
-    # 単一ウィンドウサイズでの検出
-    if [[ "$RUN_ALL" == true ]]; then
-      detect_text_duplicates
-      detect_structural_duplicates
-      detect_pattern_duplicates
-      detect_functional_duplicates
-      detect_basic_duplicates
-    else
-      [[ "$RUN_TEXT" == true ]] && detect_text_duplicates
-      [[ "$RUN_STRUCTURAL" == true ]] && detect_structural_duplicates
-      [[ "$RUN_PATTERNS" == true ]] && detect_pattern_duplicates
-      [[ "$RUN_FUNCTIONAL" == true ]] && detect_functional_duplicates
-      [[ "$RUN_BASIC" == true ]] && detect_basic_duplicates
-    fi
-  fi
-  
-  finalize_output
-}
-
-# スクリプト実行
-main "$@"\t' read -r hash location; do
-      local locations
-      locations=$(grep "^$hash" "$TMP/text_hashes_${window_size}" | cut -f2 | sort | tr '\n' ',' | sed 's/,$//')
-      if [[ $(echo "$locations" | tr ',' '\n' | wc -l) -gt 1 ]]; then
-        output_result "TEXT_MULTILINE" "$hash" "$locations" "$window_size"
-      fi
-    done
-  fi
-  
-  # 2. 文字列リテラル重複
-  log "文字列リテラル重複検出中"
-  
-  find "$NORM" -name "*.js" -type f -exec grep -Hn "\"STR\"" {} \; | \
-  while IFS=: read -r file line content; do
-    local pattern_hash
-    pattern_hash=$(echo "$content" | $HASH_CMD | cut -d' ' -f1)
-    echo "$pattern_hash	$file:$line"
-  done | sort | uniq -d | while IFS=
-
-# 構造的重複検出
-detect_structural_duplicates() {
-  section "構造的重複検出"
-  
-  # 1. 制御フロー重複（if-else）
-  log "if-else構造重複検出中"
-  
-  find "$NORM" -name "*.js" -type f | while read -r f; do
-    grep -n "if\|else" "$f" | while IFS=: read -r line_num content; do
-      local normalized
-      normalized=$(echo "$content" | sed -E 's/VAR[0-9]*/VAR/g; s/NUM/NUM/g; s/[[:space:]]+//g')
-      local hash
-      hash=$(echo "$normalized" | $HASH_CMD | cut -d' ' -f1)
-      echo "$hash	$f:$line_num"
-    done
-  done > "$TMP/structural_if"
-  
-  if [[ -s "$TMP/structural_if" ]]; then
-    sort "$TMP/structural_if" | uniq -d | while IFS=$'\t' read -r hash location; do
-      local locations
-      locations=$(grep "^$hash" "$TMP/structural_if" | cut -f2 | sort | tr '\n' ',' | sed 's/,$//')
-      if [[ $(echo "$locations" | tr ',' '\n' | wc -l) -gt 1 ]]; then
-        output_result "STRUCTURAL_IF" "$hash" "$locations"
-      fi
-    done
-  fi
-  
-  # 2. ループ構造重複
-  log "ループ構造重複検出中"
-  
-  find "$NORM" -name "*.js" -type f | while read -r f; do
-    grep -n "for\|while" "$f" | while IFS=: read -r line_num content; do
-      local normalized
-      normalized=$(echo "$content" | sed -E 's/VAR[0-9]*/VAR/g; s/NUM/NUM/g; s/[[:space:]]+//g')
-      local hash
-      hash=$(echo "$normalized" | $HASH_CMD | cut -d' ' -f1)
-      echo "$hash	$f:$line_num"
-    done
-  done > "$TMP/structural_loop"
-  
-  if [[ -s "$TMP/structural_loop" ]]; then
-    sort "$TMP/structural_loop" | uniq -d | while IFS=$'\t' read -r hash location; do
-      local locations
-      locations=$(grep "^$hash" "$TMP/structural_loop" | cut -f2 | sort | tr '\n' ',' | sed 's/,$//')
-      if [[ $(echo "$locations" | tr ',' '\n' | wc -l) -gt 1 ]]; then
-        output_result "STRUCTURAL_LOOP" "$hash" "$locations"
-      fi
-    done
-  fi
-}
-
-# パターンベース重複検出
-detect_pattern_duplicates() {
-  section "パターンベース重複検出"
-  
-  # 1. 配列操作パターン
-  log "配列操作パターン検出中"
-  
-  find "$NORM" -name "*.js" -type f | while read -r f; do
-    grep -n "\.map\|\.filter\|\.reduce" "$f" | while IFS=: read -r line_num content; do
-      local pattern
-      pattern=$(echo "$content" | sed -E 's/\.map\([^)]*\)/.map(F)/g; s/\.filter\([^)]*\)/.filter(F)/g; s/\.reduce\([^)]*\)/.reduce(F)/g')
-      local hash
-      hash=$(echo "$pattern" | $HASH_CMD | cut -d' ' -f1)
-      echo "$hash	$f:$line_num"
-    done
-  done > "$TMP/pattern_array"
-  
-  if [[ -s "$TMP/pattern_array" ]]; then
-    sort "$TMP/pattern_array" | uniq -d | while IFS=$'\t' read -r hash location; do
-      local locations
-      locations=$(grep "^$hash" "$TMP/pattern_array" | cut -f2 | sort | tr '\n' ',' | sed 's/,$//')
-      if [[ $(echo "$locations" | tr ',' '\n' | wc -l) -gt 1 ]]; then
-        output_result "PATTERN_ARRAY" "$hash" "$locations"
-      fi
-    done
-  fi
-  
-  # 2. Promiseチェーン
-  log "Promiseチェーン検出中"
-  
-  find "$NORM" -name "*.js" -type f | while read -r f; do
-    grep -n "\.then\|\.catch" "$f" | while IFS=: read -r line_num content; do
-      local pattern
-      pattern=$(echo "$content" | sed -E 's/\.then\([^)]*\)/.then(F)/g; s/\.catch\([^)]*\)/.catch(F)/g')
-      local hash
-      hash=$(echo "$pattern" | $HASH_CMD | cut -d' ' -f1)
-      echo "$hash	$f:$line_num"
-    done
-  done > "$TMP/pattern_promise"
-  
-  if [[ -s "$TMP/pattern_promise" ]]; then
-    sort "$TMP/pattern_promise" | uniq -d | while IFS=$'\t' read -r hash location; do
-      local locations
-      locations=$(grep "^$hash" "$TMP/pattern_promise" | cut -f2 | sort | tr '\n' ',' | sed 's/,$//')
-      if [[ $(echo "$locations" | tr ',' '\n' | wc -l) -gt 1 ]]; then
-        output_result "PATTERN_PROMISE" "$hash" "$locations"
-      fi
-    done
-  fi
-}
-
-# 関数的重複検出
-detect_functional_duplicates() {
-  section "関数的重複検出"
-  
-  # 1. 関数定義重複
-  log "関数定義重複検出中"
-  
-  find "$NORM" -name "*.js" -type f | while read -r f; do
-    grep -n "function\|=>" "$f" | while IFS=: read -r line_num content; do
-      local normalized
-      normalized=$(echo "$content" | sed -E 's/function[[:space:]]+VAR/function VAR/g; s/VAR[0-9]*/VAR/g; s/[[:space:]]+//g')
-      local hash
-      hash=$(echo "$normalized" | $HASH_CMD | cut -d' ' -f1)
-      echo "$hash	$f:$line_num"
-    done
-  done > "$TMP/functional_def"
-  
-  if [[ -s "$TMP/functional_def" ]]; then
-    sort "$TMP/functional_def" | uniq -d | while IFS=$'\t' read -r hash location; do
-      local locations
-      locations=$(grep "^$hash" "$TMP/functional_def" | cut -f2 | sort | tr '\n' ',' | sed 's/,$//')
-      if [[ $(echo "$locations" | tr ',' '\n' | wc -l) -gt 1 ]]; then
-        output_result "FUNCTIONAL_DEF" "$hash" "$locations"
-      fi
-    done
-  fi
-}
-
-# 基本的重複検出
-detect_basic_duplicates() {
-  section "基本的重複検出"
-  
-  # 多行重複（簡易版）
-  log "基本多行重複検出中"
-  
-  find "$NORM" -name "*.js" -type f | while read -r f; do
-    awk -v window="$WINDOW" -v file="$f" '
-    {
-      for(i=1; i<=NF; i++) {
-        if (NF >= window) {
-          block = ""
-          for(j=i; j<i+window && j<=NF; j++) {
-            block = block $j " "
-          }
-          if (length(block) > 10) {
-            cmd = "echo \"" block "\" | '"$HASH_CMD"'"
-            cmd | getline hash
-            close(cmd)
-            print substr(hash, 1, 32) "\t" file ":" NR
-          }
-        }
-      }
-    }
-    ' "$f"
-  done > "$TMP/basic_hashes"
-  
-  if [[ -s "$TMP/basic_hashes" ]]; then
-    sort "$TMP/basic_hashes" | uniq -d | while IFS=$'\t' read -r hash location; do
-      local locations
-      locations=$(grep "^$hash" "$TMP/basic_hashes" | cut -f2 | sort | tr '\n' ',' | sed 's/,$//')
-      if [[ $(echo "$locations" | tr ',' '\n' | wc -l) -gt 1 ]]; then
-        output_result "BASIC_DUPLICATE" "$hash" "$locations"
-      fi
-    done
-  fi
-}
-
-# 結果出力の初期化
-init_output() {
-  case "$OUTPUT_FORMAT" in
-    json)
-      echo "[" > "$RESULTS/output.json"
-      ;;
-    csv)
-      echo "type,hash,locations" > "$RESULTS/output.csv"
-      ;;
-  esac
-}
-
-# 結果出力の終了処理
-finalize_output() {
-  case "$OUTPUT_FORMAT" in
-    json)
-      # 最後のカンマを削除してJSONを閉じる
-      if [[ -s "$RESULTS/output.json" ]]; then
-        sed -i '$ s/,$//' "$RESULTS/output.json" 2>/dev/null || true
-      fi
-      echo "]" >> "$RESULTS/output.json"
-      cat "$RESULTS/output.json"
-      ;;
-    csv)
-      cat "$RESULTS/output.csv"
-      ;;
-    console)
-      section "検出完了"
-      info "重複検出処理が完了しました"
-      ;;
-  esac
-}
-
-# メイン実行関数
-main() {
-  parse_arguments "$@"
-  setup_platform
-  setup_temp
-  prepare_files
-  init_output
-  
-  info "重複検出開始: $TARGET_DIR (ウィンドウサイズ: $WINDOW)"
-  
-  # 検出実行
-  if [[ "$RUN_ALL" == true ]]; then
-    detect_text_duplicates
-    detect_structural_duplicates
-    detect_pattern_duplicates
-    detect_functional_duplicates
-    detect_basic_duplicates
-  else
-    [[ "$RUN_TEXT" == true ]] && detect_text_duplicates
-    [[ "$RUN_STRUCTURAL" == true ]] && detect_structural_duplicates
-    [[ "$RUN_PATTERNS" == true ]] && detect_pattern_duplicates
-    [[ "$RUN_FUNCTIONAL" == true ]] && detect_functional_duplicates
-    [[ "$RUN_BASIC" == true ]] && detect_basic_duplicates
-  fi
-  
-  finalize_output
-}
-
-# スクリプト実行
-main "$@"\t' read -r hash location; do
-    local locations
-    locations=$(grep "^$hash" <(find "$NORM" -name "*.js" -type f -exec grep -Hn "\"STR\"" {} \; | \
-    while IFS=: read -r file line content; do
-      local pattern_hash
-      pattern_hash=$(echo "$content" | $HASH_CMD | cut -d' ' -f1)
-      echo "$pattern_hash	$file:$line"
-    done) | cut -f2 | sort | tr '\n' ',' | sed 's/,$//')
-    output_result "TEXT_STRING" "$hash" "$locations" "$window_size"
-  done
-}
-
-# 構造的重複検出
-detect_structural_duplicates() {
-  section "構造的重複検出"
-  
-  # 1. 制御フロー重複（if-else）
-  log "if-else構造重複検出中"
-  
-  find "$NORM" -name "*.js" -type f | while read -r f; do
-    grep -n "if\|else" "$f" | while IFS=: read -r line_num content; do
-      local normalized
-      normalized=$(echo "$content" | sed -E 's/VAR[0-9]*/VAR/g; s/NUM/NUM/g; s/[[:space:]]+//g')
-      local hash
-      hash=$(echo "$normalized" | $HASH_CMD | cut -d' ' -f1)
-      echo "$hash	$f:$line_num"
-    done
-  done > "$TMP/structural_if"
-  
-  if [[ -s "$TMP/structural_if" ]]; then
-    sort "$TMP/structural_if" | uniq -d | while IFS=$'\t' read -r hash location; do
-      local locations
-      locations=$(grep "^$hash" "$TMP/structural_if" | cut -f2 | sort | tr '\n' ',' | sed 's/,$//')
-      if [[ $(echo "$locations" | tr ',' '\n' | wc -l) -gt 1 ]]; then
-        output_result "STRUCTURAL_IF" "$hash" "$locations"
-      fi
-    done
-  fi
-  
-  # 2. ループ構造重複
-  log "ループ構造重複検出中"
-  
-  find "$NORM" -name "*.js" -type f | while read -r f; do
-    grep -n "for\|while" "$f" | while IFS=: read -r line_num content; do
-      local normalized
-      normalized=$(echo "$content" | sed -E 's/VAR[0-9]*/VAR/g; s/NUM/NUM/g; s/[[:space:]]+//g')
-      local hash
-      hash=$(echo "$normalized" | $HASH_CMD | cut -d' ' -f1)
-      echo "$hash	$f:$line_num"
-    done
-  done > "$TMP/structural_loop"
-  
-  if [[ -s "$TMP/structural_loop" ]]; then
-    sort "$TMP/structural_loop" | uniq -d | while IFS=$'\t' read -r hash location; do
-      local locations
-      locations=$(grep "^$hash" "$TMP/structural_loop" | cut -f2 | sort | tr '\n' ',' | sed 's/,$//')
-      if [[ $(echo "$locations" | tr ',' '\n' | wc -l) -gt 1 ]]; then
-        output_result "STRUCTURAL_LOOP" "$hash" "$locations"
-      fi
-    done
-  fi
-}
-
-# パターンベース重複検出
-detect_pattern_duplicates() {
-  section "パターンベース重複検出"
-  
-  # 1. 配列操作パターン
-  log "配列操作パターン検出中"
-  
-  find "$NORM" -name "*.js" -type f | while read -r f; do
-    grep -n "\.map\|\.filter\|\.reduce" "$f" | while IFS=: read -r line_num content; do
-      local pattern
-      pattern=$(echo "$content" | sed -E 's/\.map\([^)]*\)/.map(F)/g; s/\.filter\([^)]*\)/.filter(F)/g; s/\.reduce\([^)]*\)/.reduce(F)/g')
-      local hash
-      hash=$(echo "$pattern" | $HASH_CMD | cut -d' ' -f1)
-      echo "$hash	$f:$line_num"
-    done
-  done > "$TMP/pattern_array"
-  
-  if [[ -s "$TMP/pattern_array" ]]; then
-    sort "$TMP/pattern_array" | uniq -d | while IFS=$'\t' read -r hash location; do
-      local locations
-      locations=$(grep "^$hash" "$TMP/pattern_array" | cut -f2 | sort | tr '\n' ',' | sed 's/,$//')
-      if [[ $(echo "$locations" | tr ',' '\n' | wc -l) -gt 1 ]]; then
-        output_result "PATTERN_ARRAY" "$hash" "$locations"
-      fi
-    done
-  fi
-  
-  # 2. Promiseチェーン
-  log "Promiseチェーン検出中"
-  
-  find "$NORM" -name "*.js" -type f | while read -r f; do
-    grep -n "\.then\|\.catch" "$f" | while IFS=: read -r line_num content; do
-      local pattern
-      pattern=$(echo "$content" | sed -E 's/\.then\([^)]*\)/.then(F)/g; s/\.catch\([^)]*\)/.catch(F)/g')
-      local hash
-      hash=$(echo "$pattern" | $HASH_CMD | cut -d' ' -f1)
-      echo "$hash	$f:$line_num"
-    done
-  done > "$TMP/pattern_promise"
-  
-  if [[ -s "$TMP/pattern_promise" ]]; then
-    sort "$TMP/pattern_promise" | uniq -d | while IFS=$'\t' read -r hash location; do
-      local locations
-      locations=$(grep "^$hash" "$TMP/pattern_promise" | cut -f2 | sort | tr '\n' ',' | sed 's/,$//')
-      if [[ $(echo "$locations" | tr ',' '\n' | wc -l) -gt 1 ]]; then
-        output_result "PATTERN_PROMISE" "$hash" "$locations"
-      fi
-    done
-  fi
-}
-
-# 関数的重複検出
-detect_functional_duplicates() {
-  section "関数的重複検出"
-  
-  # 1. 関数定義重複
-  log "関数定義重複検出中"
-  
-  find "$NORM" -name "*.js" -type f | while read -r f; do
-    grep -n "function\|=>" "$f" | while IFS=: read -r line_num content; do
-      local normalized
-      normalized=$(echo "$content" | sed -E 's/function[[:space:]]+VAR/function VAR/g; s/VAR[0-9]*/VAR/g; s/[[:space:]]+//g')
-      local hash
-      hash=$(echo "$normalized" | $HASH_CMD | cut -d' ' -f1)
-      echo "$hash	$f:$line_num"
-    done
-  done > "$TMP/functional_def"
-  
-  if [[ -s "$TMP/functional_def" ]]; then
-    sort "$TMP/functional_def" | uniq -d | while IFS=$'\t' read -r hash location; do
-      local locations
-      locations=$(grep "^$hash" "$TMP/functional_def" | cut -f2 | sort | tr '\n' ',' | sed 's/,$//')
-      if [[ $(echo "$locations" | tr ',' '\n' | wc -l) -gt 1 ]]; then
-        output_result "FUNCTIONAL_DEF" "$hash" "$locations"
-      fi
-    done
-  fi
-}
-
-# 基本的重複検出
-detect_basic_duplicates() {
-  section "基本的重複検出"
-  
-  # 多行重複（簡易版）
-  log "基本多行重複検出中"
-  
-  find "$NORM" -name "*.js" -type f | while read -r f; do
-    awk -v window="$WINDOW" -v file="$f" '
-    {
-      for(i=1; i<=NF; i++) {
-        if (NF >= window) {
-          block = ""
-          for(j=i; j<i+window && j<=NF; j++) {
-            block = block $j " "
-          }
-          if (length(block) > 10) {
-            cmd = "echo \"" block "\" | '"$HASH_CMD"'"
-            cmd | getline hash
-            close(cmd)
-            print substr(hash, 1, 32) "\t" file ":" NR
-          }
-        }
-      }
-    }
-    ' "$f"
-  done > "$TMP/basic_hashes"
-  
-  if [[ -s "$TMP/basic_hashes" ]]; then
-    sort "$TMP/basic_hashes" | uniq -d | while IFS=$'\t' read -r hash location; do
-      local locations
-      locations=$(grep "^$hash" "$TMP/basic_hashes" | cut -f2 | sort | tr '\n' ',' | sed 's/,$//')
-      if [[ $(echo "$locations" | tr ',' '\n' | wc -l) -gt 1 ]]; then
-        output_result "BASIC_DUPLICATE" "$hash" "$locations"
-      fi
-    done
-  fi
-}
-
-# 結果出力の初期化
-init_output() {
-  case "$OUTPUT_FORMAT" in
-    json)
-      echo "[" > "$RESULTS/output.json"
-      ;;
-    csv)
-      echo "type,hash,locations" > "$RESULTS/output.csv"
-      ;;
-  esac
-}
-
-# 結果出力の終了処理
-finalize_output() {
-  case "$OUTPUT_FORMAT" in
-    json)
-      # 最後のカンマを削除してJSONを閉じる
-      if [[ -s "$RESULTS/output.json" ]]; then
-        sed -i '$ s/,$//' "$RESULTS/output.json" 2>/dev/null || true
-      fi
-      echo "]" >> "$RESULTS/output.json"
-      cat "$RESULTS/output.json"
-      ;;
-    csv)
-      cat "$RESULTS/output.csv"
-      ;;
-    console)
-      section "検出完了"
-      info "重複検出処理が完了しました"
-      ;;
-  esac
-}
-
-# メイン実行関数
-main() {
-  parse_arguments "$@"
-  setup_platform
-  setup_temp
-  prepare_files
-  init_output
-  
-  info "重複検出開始: $TARGET_DIR (ウィンドウサイズ: $WINDOW)"
-  
-  # 検出実行
-  if [[ "$RUN_ALL" == true ]]; then
-    detect_text_duplicates
-    detect_structural_duplicates
-    detect_pattern_duplicates
-    detect_functional_duplicates
-    detect_basic_duplicates
-  else
-    [[ "$RUN_TEXT" == true ]] && detect_text_duplicates
-    [[ "$RUN_STRUCTURAL" == true ]] && detect_structural_duplicates
-    [[ "$RUN_PATTERNS" == true ]] && detect_pattern_duplicates
-    [[ "$RUN_FUNCTIONAL" == true ]] && detect_functional_duplicates
-    [[ "$RUN_BASIC" == true ]] && detect_basic_duplicates
-  fi
-  
-  finalize_output
-}
-
-# スクリプト実行
-main "$@"\t' read -r hash location; do
-      local locations
-      locations=$(grep "^$hash" "$TMP/basic_hashes_${window_size}" | cut -f2 | sort | tr '\n' ',' | sed 's/,$//')
-      if [[ $(echo "$locations" | tr ',' '\n' | wc -l) -gt 1 ]]; then
-        output_result "BASIC_DUPLICATE" "$hash" "$locations" "$window_size"
-      fi
-    done
-  fi
-}
-
-# 結果出力の初期化
-init_output() {
-  case "$OUTPUT_FORMAT" in
-    json)
-      echo "[" > "$RESULTS/output.json"
-      ;;
-    csv)
-      echo "type,hash,locations" > "$RESULTS/output.csv"
-      ;;
-  esac
-}
-
-# 結果出力の終了処理
-finalize_output() {
-  case "$OUTPUT_FORMAT" in
-    json)
-      # 最後のカンマを削除してJSONを閉じる
-      if [[ -s "$RESULTS/output.json" ]]; then
-        sed -i '$ s/,$//' "$RESULTS/output.json" 2>/dev/null || true
-      fi
-      echo "]" >> "$RESULTS/output.json"
-      cat "$RESULTS/output.json"
-      ;;
-    csv)
-      cat "$RESULTS/output.csv"
-      ;;
-    console)
-      section "検出完了"
-      info "重複検出処理が完了しました"
-      ;;
-  esac
-}
-
-# メイン実行関数
-main() {
-  parse_arguments "$@"
-  setup_platform
-  setup_temp
-  prepare_files
-  init_output
-  
-  info "重複検出開始: $TARGET_DIR (ウィンドウサイズ: $WINDOW)"
-  
-  # 検出実行
-  if [[ "$RUN_ALL" == true ]]; then
-    detect_text_duplicates
-    detect_structural_duplicates
-    detect_pattern_duplicates
-    detect_functional_duplicates
-    detect_basic_duplicates
-  else
-    [[ "$RUN_TEXT" == true ]] && detect_text_duplicates
-    [[ "$RUN_STRUCTURAL" == true ]] && detect_structural_duplicates
-    [[ "$RUN_PATTERNS" == true ]] && detect_pattern_duplicates
-    [[ "$RUN_FUNCTIONAL" == true ]] && detect_functional_duplicates
-    [[ "$RUN_BASIC" == true ]] && detect_basic_duplicates
-  fi
-  
-  finalize_output
-}
-
-# スクリプト実行
-main "$@"\t' read -r hash location; do
-      local locations
-      locations=$(grep "^$hash" "$TMP/text_hashes_${window_size}" | cut -f2 | sort | tr '\n' ',' | sed 's/,$//')
-      if [[ $(echo "$locations" | tr ',' '\n' | wc -l) -gt 1 ]]; then
-        output_result "TEXT_MULTILINE" "$hash" "$locations" "$window_size"
-      fi
-    done
-  fi
-  
-  # 2. 文字列リテラル重複
-  log "文字列リテラル重複検出中"
-  
-  find "$NORM" -name "*.js" -type f -exec grep -Hn "\"STR\"" {} \; | \
-  while IFS=: read -r file line content; do
-    local pattern_hash
-    pattern_hash=$(echo "$content" | $HASH_CMD | cut -d' ' -f1)
-    echo "$pattern_hash	$file:$line"
-  done | sort | uniq -d | while IFS=
-
-# 構造的重複検出
-detect_structural_duplicates() {
-  section "構造的重複検出"
-  
-  # 1. 制御フロー重複（if-else）
-  log "if-else構造重複検出中"
-  
-  find "$NORM" -name "*.js" -type f | while read -r f; do
-    grep -n "if\|else" "$f" | while IFS=: read -r line_num content; do
-      local normalized
-      normalized=$(echo "$content" | sed -E 's/VAR[0-9]*/VAR/g; s/NUM/NUM/g; s/[[:space:]]+//g')
-      local hash
-      hash=$(echo "$normalized" | $HASH_CMD | cut -d' ' -f1)
-      echo "$hash	$f:$line_num"
-    done
-  done > "$TMP/structural_if"
-  
-  if [[ -s "$TMP/structural_if" ]]; then
-    sort "$TMP/structural_if" | uniq -d | while IFS=$'\t' read -r hash location; do
-      local locations
-      locations=$(grep "^$hash" "$TMP/structural_if" | cut -f2 | sort | tr '\n' ',' | sed 's/,$//')
-      if [[ $(echo "$locations" | tr ',' '\n' | wc -l) -gt 1 ]]; then
-        output_result "STRUCTURAL_IF" "$hash" "$locations"
-      fi
-    done
-  fi
-  
-  # 2. ループ構造重複
-  log "ループ構造重複検出中"
-  
-  find "$NORM" -name "*.js" -type f | while read -r f; do
-    grep -n "for\|while" "$f" | while IFS=: read -r line_num content; do
-      local normalized
-      normalized=$(echo "$content" | sed -E 's/VAR[0-9]*/VAR/g; s/NUM/NUM/g; s/[[:space:]]+//g')
-      local hash
-      hash=$(echo "$normalized" | $HASH_CMD | cut -d' ' -f1)
-      echo "$hash	$f:$line_num"
-    done
-  done > "$TMP/structural_loop"
-  
-  if [[ -s "$TMP/structural_loop" ]]; then
-    sort "$TMP/structural_loop" | uniq -d | while IFS=$'\t' read -r hash location; do
-      local locations
-      locations=$(grep "^$hash" "$TMP/structural_loop" | cut -f2 | sort | tr '\n' ',' | sed 's/,$//')
-      if [[ $(echo "$locations" | tr ',' '\n' | wc -l) -gt 1 ]]; then
-        output_result "STRUCTURAL_LOOP" "$hash" "$locations"
-      fi
-    done
-  fi
-}
-
-# パターンベース重複検出
-detect_pattern_duplicates() {
-  section "パターンベース重複検出"
-  
-  # 1. 配列操作パターン
-  log "配列操作パターン検出中"
-  
-  find "$NORM" -name "*.js" -type f | while read -r f; do
-    grep -n "\.map\|\.filter\|\.reduce" "$f" | while IFS=: read -r line_num content; do
-      local pattern
-      pattern=$(echo "$content" | sed -E 's/\.map\([^)]*\)/.map(F)/g; s/\.filter\([^)]*\)/.filter(F)/g; s/\.reduce\([^)]*\)/.reduce(F)/g')
-      local hash
-      hash=$(echo "$pattern" | $HASH_CMD | cut -d' ' -f1)
-      echo "$hash	$f:$line_num"
-    done
-  done > "$TMP/pattern_array"
-  
-  if [[ -s "$TMP/pattern_array" ]]; then
-    sort "$TMP/pattern_array" | uniq -d | while IFS=$'\t' read -r hash location; do
-      local locations
-      locations=$(grep "^$hash" "$TMP/pattern_array" | cut -f2 | sort | tr '\n' ',' | sed 's/,$//')
-      if [[ $(echo "$locations" | tr ',' '\n' | wc -l) -gt 1 ]]; then
-        output_result "PATTERN_ARRAY" "$hash" "$locations"
-      fi
-    done
-  fi
-  
-  # 2. Promiseチェーン
-  log "Promiseチェーン検出中"
-  
-  find "$NORM" -name "*.js" -type f | while read -r f; do
-    grep -n "\.then\|\.catch" "$f" | while IFS=: read -r line_num content; do
-      local pattern
-      pattern=$(echo "$content" | sed -E 's/\.then\([^)]*\)/.then(F)/g; s/\.catch\([^)]*\)/.catch(F)/g')
-      local hash
-      hash=$(echo "$pattern" | $HASH_CMD | cut -d' ' -f1)
-      echo "$hash	$f:$line_num"
-    done
-  done > "$TMP/pattern_promise"
-  
-  if [[ -s "$TMP/pattern_promise" ]]; then
-    sort "$TMP/pattern_promise" | uniq -d | while IFS=$'\t' read -r hash location; do
-      local locations
-      locations=$(grep "^$hash" "$TMP/pattern_promise" | cut -f2 | sort | tr '\n' ',' | sed 's/,$//')
-      if [[ $(echo "$locations" | tr ',' '\n' | wc -l) -gt 1 ]]; then
-        output_result "PATTERN_PROMISE" "$hash" "$locations"
-      fi
-    done
-  fi
-}
-
-# 関数的重複検出
-detect_functional_duplicates() {
-  section "関数的重複検出"
-  
-  # 1. 関数定義重複
-  log "関数定義重複検出中"
-  
-  find "$NORM" -name "*.js" -type f | while read -r f; do
-    grep -n "function\|=>" "$f" | while IFS=: read -r line_num content; do
-      local normalized
-      normalized=$(echo "$content" | sed -E 's/function[[:space:]]+VAR/function VAR/g; s/VAR[0-9]*/VAR/g; s/[[:space:]]+//g')
-      local hash
-      hash=$(echo "$normalized" | $HASH_CMD | cut -d' ' -f1)
-      echo "$hash	$f:$line_num"
-    done
-  done > "$TMP/functional_def"
-  
-  if [[ -s "$TMP/functional_def" ]]; then
-    sort "$TMP/functional_def" | uniq -d | while IFS=$'\t' read -r hash location; do
-      local locations
-      locations=$(grep "^$hash" "$TMP/functional_def" | cut -f2 | sort | tr '\n' ',' | sed 's/,$//')
-      if [[ $(echo "$locations" | tr ',' '\n' | wc -l) -gt 1 ]]; then
-        output_result "FUNCTIONAL_DEF" "$hash" "$locations"
-      fi
-    done
-  fi
-}
-
-# 基本的重複検出
-detect_basic_duplicates() {
-  section "基本的重複検出"
-  
-  # 多行重複（簡易版）
-  log "基本多行重複検出中"
-  
-  find "$NORM" -name "*.js" -type f | while read -r f; do
-    awk -v window="$WINDOW" -v file="$f" '
-    {
-      for(i=1; i<=NF; i++) {
-        if (NF >= window) {
-          block = ""
-          for(j=i; j<i+window && j<=NF; j++) {
-            block = block $j " "
-          }
-          if (length(block) > 10) {
-            cmd = "echo \"" block "\" | '"$HASH_CMD"'"
-            cmd | getline hash
-            close(cmd)
-            print substr(hash, 1, 32) "\t" file ":" NR
-          }
-        }
-      }
-    }
-    ' "$f"
-  done > "$TMP/basic_hashes"
-  
-  if [[ -s "$TMP/basic_hashes" ]]; then
-    sort "$TMP/basic_hashes" | uniq -d | while IFS=$'\t' read -r hash location; do
-      local locations
-      locations=$(grep "^$hash" "$TMP/basic_hashes" | cut -f2 | sort | tr '\n' ',' | sed 's/,$//')
-      if [[ $(echo "$locations" | tr ',' '\n' | wc -l) -gt 1 ]]; then
-        output_result "BASIC_DUPLICATE" "$hash" "$locations"
-      fi
-    done
-  fi
-}
-
-# 結果出力の初期化
-init_output() {
-  case "$OUTPUT_FORMAT" in
-    json)
-      echo "[" > "$RESULTS/output.json"
-      ;;
-    csv)
-      echo "type,hash,locations" > "$RESULTS/output.csv"
-      ;;
-  esac
-}
-
-# 結果出力の終了処理
-finalize_output() {
-  case "$OUTPUT_FORMAT" in
-    json)
-      # 最後のカンマを削除してJSONを閉じる
-      if [[ -s "$RESULTS/output.json" ]]; then
-        sed -i '$ s/,$//' "$RESULTS/output.json" 2>/dev/null || true
-      fi
-      echo "]" >> "$RESULTS/output.json"
-      cat "$RESULTS/output.json"
-      ;;
-    csv)
-      cat "$RESULTS/output.csv"
-      ;;
-    console)
-      section "検出完了"
-      info "重複検出処理が完了しました"
-      ;;
-  esac
-}
-
-# メイン実行関数
-main() {
-  parse_arguments "$@"
-  setup_platform
-  setup_temp
-  prepare_files
-  init_output
-  
-  info "重複検出開始: $TARGET_DIR (ウィンドウサイズ: $WINDOW)"
-  
-  # 検出実行
-  if [[ "$RUN_ALL" == true ]]; then
-    detect_text_duplicates
-    detect_structural_duplicates
-    detect_pattern_duplicates
-    detect_functional_duplicates
-    detect_basic_duplicates
-  else
-    [[ "$RUN_TEXT" == true ]] && detect_text_duplicates
-    [[ "$RUN_STRUCTURAL" == true ]] && detect_structural_duplicates
-    [[ "$RUN_PATTERNS" == true ]] && detect_pattern_duplicates
-    [[ "$RUN_FUNCTIONAL" == true ]] && detect_functional_duplicates
-    [[ "$RUN_BASIC" == true ]] && detect_basic_duplicates
-  fi
-  
-  finalize_output
-}
-
-# スクリプト実行
-main "$@"\t' read -r hash location; do
-    local locations
-    locations=$(grep "^$hash" <(find "$NORM" -name "*.js" -type f -exec grep -Hn "\"STR\"" {} \; | \
-    while IFS=: read -r file line content; do
-      local pattern_hash
-      pattern_hash=$(echo "$content" | $HASH_CMD | cut -d' ' -f1)
-      echo "$pattern_hash	$file:$line"
-    done) | cut -f2 | sort | tr '\n' ',' | sed 's/,$//')
-    output_result "TEXT_STRING" "$hash" "$locations" "$window_size"
-  done
-}
-
-# 構造的重複検出
-detect_structural_duplicates() {
-  section "構造的重複検出"
-  
-  # 1. 制御フロー重複（if-else）
-  log "if-else構造重複検出中"
-  
-  find "$NORM" -name "*.js" -type f | while read -r f; do
-    grep -n "if\|else" "$f" | while IFS=: read -r line_num content; do
-      local normalized
-      normalized=$(echo "$content" | sed -E 's/VAR[0-9]*/VAR/g; s/NUM/NUM/g; s/[[:space:]]+//g')
-      local hash
-      hash=$(echo "$normalized" | $HASH_CMD | cut -d' ' -f1)
-      echo "$hash	$f:$line_num"
-    done
-  done > "$TMP/structural_if"
-  
-  if [[ -s "$TMP/structural_if" ]]; then
-    sort "$TMP/structural_if" | uniq -d | while IFS=$'\t' read -r hash location; do
-      local locations
-      locations=$(grep "^$hash" "$TMP/structural_if" | cut -f2 | sort | tr '\n' ',' | sed 's/,$//')
-      if [[ $(echo "$locations" | tr ',' '\n' | wc -l) -gt 1 ]]; then
-        output_result "STRUCTURAL_IF" "$hash" "$locations"
-      fi
-    done
-  fi
-  
-  # 2. ループ構造重複
-  log "ループ構造重複検出中"
-  
-  find "$NORM" -name "*.js" -type f | while read -r f; do
-    grep -n "for\|while" "$f" | while IFS=: read -r line_num content; do
-      local normalized
-      normalized=$(echo "$content" | sed -E 's/VAR[0-9]*/VAR/g; s/NUM/NUM/g; s/[[:space:]]+//g')
-      local hash
-      hash=$(echo "$normalized" | $HASH_CMD | cut -d' ' -f1)
-      echo "$hash	$f:$line_num"
-    done
-  done > "$TMP/structural_loop"
-  
-  if [[ -s "$TMP/structural_loop" ]]; then
-    sort "$TMP/structural_loop" | uniq -d | while IFS=$'\t' read -r hash location; do
-      local locations
-      locations=$(grep "^$hash" "$TMP/structural_loop" | cut -f2 | sort | tr '\n' ',' | sed 's/,$//')
-      if [[ $(echo "$locations" | tr ',' '\n' | wc -l) -gt 1 ]]; then
-        output_result "STRUCTURAL_LOOP" "$hash" "$locations"
-      fi
-    done
-  fi
-}
-
-# パターンベース重複検出
-detect_pattern_duplicates() {
-  section "パターンベース重複検出"
-  
-  # 1. 配列操作パターン
-  log "配列操作パターン検出中"
-  
-  find "$NORM" -name "*.js" -type f | while read -r f; do
-    grep -n "\.map\|\.filter\|\.reduce" "$f" | while IFS=: read -r line_num content; do
-      local pattern
-      pattern=$(echo "$content" | sed -E 's/\.map\([^)]*\)/.map(F)/g; s/\.filter\([^)]*\)/.filter(F)/g; s/\.reduce\([^)]*\)/.reduce(F)/g')
-      local hash
-      hash=$(echo "$pattern" | $HASH_CMD | cut -d' ' -f1)
-      echo "$hash	$f:$line_num"
-    done
-  done > "$TMP/pattern_array"
-  
-  if [[ -s "$TMP/pattern_array" ]]; then
-    sort "$TMP/pattern_array" | uniq -d | while IFS=$'\t' read -r hash location; do
-      local locations
-      locations=$(grep "^$hash" "$TMP/pattern_array" | cut -f2 | sort | tr '\n' ',' | sed 's/,$//')
-      if [[ $(echo "$locations" | tr ',' '\n' | wc -l) -gt 1 ]]; then
-        output_result "PATTERN_ARRAY" "$hash" "$locations"
-      fi
-    done
-  fi
-  
-  # 2. Promiseチェーン
-  log "Promiseチェーン検出中"
-  
-  find "$NORM" -name "*.js" -type f | while read -r f; do
-    grep -n "\.then\|\.catch" "$f" | while IFS=: read -r line_num content; do
-      local pattern
-      pattern=$(echo "$content" | sed -E 's/\.then\([^)]*\)/.then(F)/g; s/\.catch\([^)]*\)/.catch(F)/g')
-      local hash
-      hash=$(echo "$pattern" | $HASH_CMD | cut -d' ' -f1)
-      echo "$hash	$f:$line_num"
-    done
-  done > "$TMP/pattern_promise"
-  
-  if [[ -s "$TMP/pattern_promise" ]]; then
-    sort "$TMP/pattern_promise" | uniq -d | while IFS=$'\t' read -r hash location; do
-      local locations
-      locations=$(grep "^$hash" "$TMP/pattern_promise" | cut -f2 | sort | tr '\n' ',' | sed 's/,$//')
-      if [[ $(echo "$locations" | tr ',' '\n' | wc -l) -gt 1 ]]; then
-        output_result "PATTERN_PROMISE" "$hash" "$locations"
-      fi
-    done
-  fi
-}
-
-# 関数的重複検出
-detect_functional_duplicates() {
-  section "関数的重複検出"
-  
-  # 1. 関数定義重複
-  log "関数定義重複検出中"
-  
-  find "$NORM" -name "*.js" -type f | while read -r f; do
-    grep -n "function\|=>" "$f" | while IFS=: read -r line_num content; do
-      local normalized
-      normalized=$(echo "$content" | sed -E 's/function[[:space:]]+VAR/function VAR/g; s/VAR[0-9]*/VAR/g; s/[[:space:]]+//g')
-      local hash
-      hash=$(echo "$normalized" | $HASH_CMD | cut -d' ' -f1)
-      echo "$hash	$f:$line_num"
-    done
-  done > "$TMP/functional_def"
-  
-  if [[ -s "$TMP/functional_def" ]]; then
-    sort "$TMP/functional_def" | uniq -d | while IFS=$'\t' read -r hash location; do
-      local locations
-      locations=$(grep "^$hash" "$TMP/functional_def" | cut -f2 | sort | tr '\n' ',' | sed 's/,$//')
-      if [[ $(echo "$locations" | tr ',' '\n' | wc -l) -gt 1 ]]; then
-        output_result "FUNCTIONAL_DEF" "$hash" "$locations"
-      fi
-    done
-  fi
-}
-
-# 基本的重複検出
-detect_basic_duplicates() {
-  section "基本的重複検出"
-  
-  # 多行重複（簡易版）
-  log "基本多行重複検出中"
-  
-  find "$NORM" -name "*.js" -type f | while read -r f; do
-    awk -v window="$WINDOW" -v file="$f" '
-    {
-      for(i=1; i<=NF; i++) {
-        if (NF >= window) {
-          block = ""
-          for(j=i; j<i+window && j<=NF; j++) {
-            block = block $j " "
-          }
-          if (length(block) > 10) {
-            cmd = "echo \"" block "\" | '"$HASH_CMD"'"
-            cmd | getline hash
-            close(cmd)
-            print substr(hash, 1, 32) "\t" file ":" NR
-          }
-        }
-      }
-    }
-    ' "$f"
-  done > "$TMP/basic_hashes"
-  
-  if [[ -s "$TMP/basic_hashes" ]]; then
-    sort "$TMP/basic_hashes" | uniq -d | while IFS=$'\t' read -r hash location; do
-      local locations
-      locations=$(grep "^$hash" "$TMP/basic_hashes" | cut -f2 | sort | tr '\n' ',' | sed 's/,$//')
-      if [[ $(echo "$locations" | tr ',' '\n' | wc -l) -gt 1 ]]; then
-        output_result "BASIC_DUPLICATE" "$hash" "$locations"
-      fi
-    done
-  fi
-}
-
-# 結果出力の初期化
-init_output() {
-  case "$OUTPUT_FORMAT" in
-    json)
-      echo "[" > "$RESULTS/output.json"
-      ;;
-    csv)
-      echo "type,hash,locations" > "$RESULTS/output.csv"
-      ;;
-  esac
-}
-
-# 結果出力の終了処理
-finalize_output() {
-  case "$OUTPUT_FORMAT" in
-    json)
-      # 最後のカンマを削除してJSONを閉じる
-      if [[ -s "$RESULTS/output.json" ]]; then
-        sed -i '$ s/,$//' "$RESULTS/output.json" 2>/dev/null || true
-      fi
-      echo "]" >> "$RESULTS/output.json"
-      cat "$RESULTS/output.json"
-      ;;
-    csv)
-      cat "$RESULTS/output.csv"
-      ;;
-    console)
-      section "検出完了"
-      info "重複検出処理が完了しました"
-      ;;
-  esac
-}
-
-# メイン実行関数
-main() {
-  parse_arguments "$@"
-  setup_platform
-  setup_temp
-  prepare_files
-  init_output
-  
-  info "重複検出開始: $TARGET_DIR (ウィンドウサイズ: $WINDOW)"
-  
-  # 検出実行
-  if [[ "$RUN_ALL" == true ]]; then
-    detect_text_duplicates
-    detect_structural_duplicates
-    detect_pattern_duplicates
-    detect_functional_duplicates
-    detect_basic_duplicates
-  else
-    [[ "$RUN_TEXT" == true ]] && detect_text_duplicates
-    [[ "$RUN_STRUCTURAL" == true ]] && detect_structural_duplicates
-    [[ "$RUN_PATTERNS" == true ]] && detect_pattern_duplicates
-    [[ "$RUN_FUNCTIONAL" == true ]] && detect_functional_duplicates
-    [[ "$RUN_BASIC" == true ]] && detect_basic_duplicates
-  fi
-  
-  finalize_output
-}
-
-# スクリプト実行
 main "$@"

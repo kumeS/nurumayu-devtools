@@ -1,0 +1,68 @@
+{
+  "test_files": [
+    {
+      "file": "test_console.js",
+      "expected_detections": 11,
+      "detections_by_severity": {
+        "CRITICAL": 7,
+        "WARNING": 3,
+        "INFO": 1
+      },
+      "detections_by_type": {
+        "console.log": 4,
+        "console.debug": 1,
+        "console.warn": 2,
+        "console.error": 1,
+        "console.info": 1,
+        "console.trace": 1,
+        "alert(": 1,
+        "debugger": 1
+      },
+      "expected_locations": [
+        {"line": 11, "type": "console.log", "severity": "CRITICAL"},
+        {"line": 14, "type": "console.debug", "severity": "CRITICAL"},
+        {"line": 17, "type": "console.warn", "severity": "WARNING"},
+        {"line": 20, "type": "console.error", "severity": "WARNING"},
+        {"line": 23, "type": "console.info", "severity": "INFO"},
+        {"line": 26, "type": "console.trace", "severity": "WARNING"},
+        {"line": 29, "type": "alert(", "severity": "CRITICAL"},
+        {"line": 32, "type": "debugger", "severity": "CRITICAL"},
+        {"line": 38, "type": "console.log", "severity": "CRITICAL"},
+        {"line": 49, "type": "console.log", "severity": "CRITICAL"},
+        {"line": 54, "type": "console.warn", "severity": "WARNING"},
+        {"line": 82, "type": "console.log", "severity": "CRITICAL"}
+      ],
+      "false_positives": 0,
+      "notes": "コメント、文字列内、関数名に含まれるパターンは検出されない"
+    },
+    {
+      "file": "production_safe.js",
+      "expected_detections": 1,
+      "detections_by_severity": {
+        "CRITICAL": 0,
+        "WARNING": 1,
+        "INFO": 0
+      },
+      "detections_by_type": {
+        "console.error": 1
+      },
+      "expected_locations": [
+        {"line": 21, "type": "console.error", "severity": "WARNING"}
+      ],
+      "notes": "console.errorは本番環境でも使用される場合があるためWARNINGレベル"
+    }
+  ],
+  "validation_criteria": {
+    "detection_rate_target": 0.95,
+    "false_positive_rate_target": 0.05,
+    "performance_target": "1000 files/second"
+  },
+  "test_scenarios": [
+    "基本パターン検出",
+    "複数行パターン検出",
+    "コメント除外（誤検出防止）",
+    "文字列内除外（誤検出防止）",
+    "関数名・変数名除外（誤検出防止）",
+    "本番環境安全コードの識別"
+  ]
+}

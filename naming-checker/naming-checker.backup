@@ -1,0 +1,615 @@
+#!/usr/bin/env bash
+
+# ======================================
+# naming-checker - 命名規則チェッカー
+# ======================================
+# JavaScript/TypeScriptの変数・関数・クラス名の命名規則を検証
+# プロジェクト全体でのコーディング規約の統一性を確保
+
+# Bash 4.0+ が必要（連想配列のため）
+if [ "${BASH_VERSINFO[0]}" -lt 4 ]; then
+    echo "Error: Bash 4.0 or higher is required" >&2
+    echo "Current version: $BASH_VERSION" >&2
+    echo "On macOS, install with: brew install bash" >&2
+    exit 1
+fi
+
+set -uo pipefail
+
+# スクリプトのディレクトリを取得
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# 共通ライブラリ読み込み
+if [ -f "$SCRIPT_DIR/../lib/common.sh" ]; then
+    source "$SCRIPT_DIR/../lib/common.sh"
+else
+    echo "Error: common.sh not found" >&2
+    exit 1
+fi
+
+# バージョン
+VERSION="1.0.0"
+
+# デフォルト設定
+OUTPUT_FORMAT="console"
+SEVERITY_FILTER="all"
+EXCLUDE_DIRS=("node_modules" "dist" "build" ".git" "coverage" "vendor")
+VERBOSE=false
+TARGET_DIR=""
+SHOW_STATS=false
+FIX_MODE=false
+
+# 命名規則設定
+CAMEL_CASE=true      # キャメルケース（変数・関数）
+PASCAL_CASE=true     # パスカルケース（クラス・コンポーネント）
+UPPER_SNAKE=true     # 大文字スネークケース（定数）
+ALLOW_SNAKE=false    # スネークケース許可フラグ
+MIN_LENGTH=2         # 最小変数名長
+MAX_LENGTH=50        # 最大変数名長
+
+# 違反カウンター
+declare -A VIOLATIONS
+VIOLATIONS["camelCase"]=0
+VIOLATIONS["PascalCase"]=0
+VIOLATIONS["UPPER_SNAKE_CASE"]=0
+VIOLATIONS["length"]=0
+VIOLATIONS["snake_case"]=0
+VIOLATIONS["prefix"]=0
+VIOLATIONS["reserved"]=0
+
+TOTAL_FILES=0
+TOTAL_VIOLATIONS=0
+
+# ======================================
+# ヘルプ表示
+# ======================================
+show_help() {
+    cat << EOF
+${BOLD}${CYAN}naming-checker${RESET} - JavaScript/TypeScript 命名規則チェッカー v${VERSION}
+
+${BOLD}使用方法:${RESET}
+    naming-checker [OPTIONS] <target-directory>
+
+${BOLD}オプション:${RESET}
+    ${GREEN}-h, --help${RESET}              このヘルプを表示
+    ${GREEN}-v, --version${RESET}           バージョン情報を表示
+    ${GREEN}--verbose${RESET}               詳細ログを表示
+    
+    ${YELLOW}出力設定:${RESET}
+    ${GREEN}-o, --output <format>${RESET}   出力形式 (console/json/csv)
+    ${GREEN}--stats${RESET}                 統計情報を表示
+    
+    ${YELLOW}命名規則設定:${RESET}
+    ${GREEN}--camel-case${RESET}            キャメルケースを検証 (デフォルト: ON)
+    ${GREEN}--pascal-case${RESET}           パスカルケースを検証 (デフォルト: ON)
+    ${GREEN}--upper-snake${RESET}           定数の大文字スネークを検証 (デフォルト: ON)
+    ${GREEN}--allow-snake${RESET}           スネークケースを許可
+    ${GREEN}--min-length <n>${RESET}        最小変数名長 (デフォルト: 2)
+    ${GREEN}--max-length <n>${RESET}        最大変数名長 (デフォルト: 50)
+    
+    ${YELLOW}フィルター設定:${RESET}
+    ${GREEN}--severity <level>${RESET}      重要度フィルター (all/critical/warning/info)
+    ${GREEN}--exclude <dir>${RESET}         除外ディレクトリを追加
+    
+${BOLD}検出パターン:${RESET}
+    ${CYAN}[CRITICAL]${RESET} camelCase違反     - 変数・関数名がキャメルケースでない
+    ${CYAN}[CRITICAL]${RESET} PascalCase違反    - クラス・コンポーネント名がパスカルでない
+    ${CYAN}[WARNING]${RESET}  定数命名違反       - 定数が大文字スネークでない
+    ${CYAN}[WARNING]${RESET}  snake_case使用    - スネークケースの使用
+    ${CYAN}[INFO]${RESET}     長さ違反          - 変数名が短すぎる/長すぎる
+    ${CYAN}[INFO]${RESET}     予約語類似        - 予約語に近い命名
+
+${BOLD}使用例:${RESET}
+    # 基本的な使用
+    naming-checker ./src
+
+    # JSON出力でCI/CD統合
+    naming-checker --output json ./src > naming-report.json
+
+    # 統計情報付きで実行
+    naming-checker --stats ./project
+
+    # スネークケースを許可
+    naming-checker --allow-snake ./src
+
+    # 最小変数名長を3文字に設定
+    naming-checker --min-length 3 ./src
+
+${BOLD}検出例:${RESET}
+    ${RED}✗${RESET} let user_name = "John";        // snake_case違反
+    ${GREEN}✓${RESET} let userName = "John";         // OK
+    
+    ${RED}✗${RESET} function do_something() {}     // snake_case違反
+    ${GREEN}✓${RESET} function doSomething() {}      // OK
+    
+    ${RED}✗${RESET} class userModel {}              // PascalCase違反
+    ${GREEN}✓${RESET} class UserModel {}             // OK
+    
+    ${RED}✗${RESET} const maxCount = 100;           // 定数命名違反
+    ${GREEN}✓${RESET} const MAX_COUNT = 100;         // OK
+
+${BOLD}プロジェクト:${RESET}
+    https://github.com/your-username/nurumayu-devtools
+
+EOF
+}
+
+# ======================================
+# ユーティリティ関数
+# ======================================
+
+# キャメルケースチェック
+is_camel_case() {
+    local name="$1"
+    [[ "$name" =~ ^[a-z][a-zA-Z0-9]*$ ]]
+}
+
+# パスカルケースチェック
+is_pascal_case() {
+    local name="$1"
+    [[ "$name" =~ ^[A-Z][a-zA-Z0-9]*$ ]]
+}
+
+# 大文字スネークケースチェック（定数用）
+is_upper_snake_case() {
+    local name="$1"
+    [[ "$name" =~ ^[A-Z][A-Z0-9_]*$ ]]
+}
+
+# スネークケースチェック
+is_snake_case() {
+    local name="$1"
+    [[ "$name" =~ _[a-z] || "$name" =~ [a-z]_ ]]
+}
+
+# 予約語チェック
+is_near_reserved() {
+    local name="$1"
+    local reserved=("var" "let" "const" "function" "class" "if" "else" "for" "while" "do" "switch" "case" "break" "continue" "return" "try" "catch" "throw" "new" "this" "super" "extends" "import" "export" "default" "async" "await" "yield" "static" "public" "private" "protected")
+    
+    local lower_name="${name,,}"
+    for word in "${reserved[@]}"; do
+        if [[ "$lower_name" == "$word" ]]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+# 長さチェック
+check_length() {
+    local name="$1"
+    local len=${#name}
+    
+    if [ "$len" -lt "$MIN_LENGTH" ]; then
+        return 1
+    elif [ "$len" -gt "$MAX_LENGTH" ]; then
+        return 2
+    fi
+    return 0
+}
+
+# ======================================
+# JavaScriptファイル解析
+# ======================================
+analyze_file() {
+    local file="$1"
+    local violations=()
+    
+    echo "[DEBUG] Analyzing file: $file" >&2
+    
+    local line_num=0
+    while IFS= read -r line; do
+        ((line_num++))
+        
+        echo "[DEBUG] Line $line_num: $line" >&2
+        
+        # コメント行をスキップ
+        if [[ "$line" =~ ^[[:space:]]*// || "$line" =~ ^[[:space:]]*\* ]]; then
+            continue
+        fi
+        
+        # 変数宣言（let, const, var）
+        if [[ "$line" =~ (let|const|var)[[:space:]]+([a-zA-Z_][a-zA-Z0-9_]*) ]]; then
+            local keyword="${BASH_REMATCH[1]}"
+            local var_name="${BASH_REMATCH[2]}"
+            
+            [ "$VERBOSE" = true ] && echo "[DEBUG] Found variable: $var_name" >&2
+            
+            # 定数チェック（const の場合）
+            if [[ "$keyword" == "const" ]] && [ "$UPPER_SNAKE" = true ]; then
+                if ! is_upper_snake_case "$var_name"; then
+                    output_violation "$file:$line_num:CONSTANT_NAMING:$var_name should be UPPER_SNAKE_CASE"
+                    ((VIOLATIONS["UPPER_SNAKE_CASE"]++))
+                    ((TOTAL_VIOLATIONS++))
+                fi
+            # 通常の変数チェック
+            elif [ "$CAMEL_CASE" = true ]; then
+                if ! is_camel_case "$var_name"; then
+                    if is_snake_case "$var_name" && [ "$ALLOW_SNAKE" = false ]; then
+                        output_violation "$file:$line_num:SNAKE_CASE:$var_name uses snake_case (use camelCase)"
+                        ((VIOLATIONS["snake_case"]++))
+                        ((TOTAL_VIOLATIONS++))
+                    elif ! is_upper_snake_case "$var_name"; then
+                        output_violation "$file:$line_num:CAMEL_CASE:$var_name should be camelCase"
+                        ((VIOLATIONS["camelCase"]++))
+                        ((TOTAL_VIOLATIONS++))
+                    fi
+                fi
+            fi
+            
+            # 長さチェック
+            check_length "$var_name"
+            local len_result=$?
+            if [ "$len_result" -eq 1 ]; then
+                output_violation "$file:$line_num:LENGTH:$var_name is too short (min: $MIN_LENGTH)"
+                ((VIOLATIONS["length"]++))
+                ((TOTAL_VIOLATIONS++))
+            elif [ "$len_result" -eq 2 ]; then
+                output_violation "$file:$line_num:LENGTH:$var_name is too long (max: $MAX_LENGTH)"
+                ((VIOLATIONS["length"]++))
+                ((TOTAL_VIOLATIONS++))
+            fi
+            
+            # 予約語チェック
+            if is_near_reserved "$var_name"; then
+                output_violation "$file:$line_num:RESERVED:$var_name is near reserved word"
+                ((VIOLATIONS["reserved"]++))
+                ((TOTAL_VIOLATIONS++))
+            fi
+        fi
+        
+        # 関数宣言
+        if [[ "$line" =~ function[[:space:]]+([a-zA-Z_][a-zA-Z0-9_]*) ]]; then
+            local func_name="${BASH_REMATCH[1]}"
+            
+            if [ "$CAMEL_CASE" = true ] && ! is_camel_case "$func_name"; then
+                if is_snake_case "$func_name" && [ "$ALLOW_SNAKE" = false ]; then
+                    output_violation "$file:$line_num:SNAKE_CASE:Function $func_name uses snake_case"
+                    ((VIOLATIONS["snake_case"]++))
+                    ((TOTAL_VIOLATIONS++))
+                elif ! is_pascal_case "$func_name"; then
+                    output_violation "$file:$line_num:CAMEL_CASE:Function $func_name should be camelCase"
+                    ((VIOLATIONS["camelCase"]++))
+                    ((TOTAL_VIOLATIONS++))
+                fi
+            fi
+        fi
+        
+        # クラス宣言
+        if [[ "$line" =~ class[[:space:]]+([a-zA-Z_][a-zA-Z0-9_]*) ]]; then
+            local class_name="${BASH_REMATCH[1]}"
+            
+            if [ "$PASCAL_CASE" = true ] && ! is_pascal_case "$class_name"; then
+                output_violation "$file:$line_num:PASCAL_CASE:Class $class_name should be PascalCase"
+                ((VIOLATIONS["PascalCase"]++))
+                ((TOTAL_VIOLATIONS++))
+            fi
+        fi
+        
+        # アロー関数（const funcName = () => {}）
+        if [[ "$line" =~ const[[:space:]]+([a-zA-Z_][a-zA-Z0-9_]*)[[:space:]]*=[[:space:]]*\( ]]; then
+            local func_name="${BASH_REMATCH[1]}"
+            
+            if [ "$CAMEL_CASE" = true ] && ! is_camel_case "$func_name"; then
+                if is_snake_case "$func_name" && [ "$ALLOW_SNAKE" = false ]; then
+                    output_violation "$file:$line_num:SNAKE_CASE:Arrow function $func_name uses snake_case"
+                    ((VIOLATIONS["snake_case"]++))
+                    ((TOTAL_VIOLATIONS++))
+                fi
+            fi
+        fi
+        
+    done < "$file"
+}
+
+# ======================================
+# 違反出力
+# ======================================
+output_violation() {
+    local violation="$1"
+    
+    # Debug output
+    [ "$VERBOSE" = true ] && echo "[DEBUG] Outputting violation: $violation" >&2
+    
+    IFS=':' read -r file line type message <<< "$violation"
+    
+    # 重要度判定
+    local severity="INFO"
+    case "$type" in
+        CAMEL_CASE|PASCAL_CASE|SNAKE_CASE)
+            severity="CRITICAL"
+            ;;
+        CONSTANT_NAMING)
+            severity="WARNING"
+            ;;
+        LENGTH|RESERVED)
+            severity="INFO"
+            ;;
+    esac
+    
+    # 重要度フィルター
+    if [ "$SEVERITY_FILTER" != "all" ]; then
+        case "$SEVERITY_FILTER" in
+            critical)
+                if [ "$severity" != "CRITICAL" ]; then
+                    return
+                fi
+                ;;
+            warning)
+                if [ "$severity" != "CRITICAL" ] && [ "$severity" != "WARNING" ]; then
+                    return
+                fi
+                ;;
+        esac
+    fi
+    
+    # 出力形式による処理
+    case "$OUTPUT_FORMAT" in
+        json)
+            # JSON出力は後でまとめて処理
+            JSON_VIOLATIONS+=("$violation")
+            ;;
+        csv)
+            echo "$file,$line,$type,$severity,\"$message\""
+            ;;
+        console|*)
+            # カラー出力
+            local severity_color=""
+            local severity_icon=""
+            case "$severity" in
+                CRITICAL)
+                    severity_color="${RED}"
+                    severity_icon="✗"
+                    ;;
+                WARNING)
+                    severity_color="${YELLOW}"
+                    severity_icon="⚠"
+                    ;;
+                INFO)
+                    severity_color="${BLUE}"
+                    severity_icon="ℹ"
+                    ;;
+            esac
+            
+            echo "${severity_color}${severity_icon} ${BOLD}[$type]${RESET} $file:${GREEN}$line${RESET}"
+            echo "  ${severity_color}$message${RESET}"
+            ;;
+    esac
+}
+
+# ======================================
+# ディレクトリスキャン
+# ======================================
+scan_directory() {
+    local target="$1"
+    
+    if [ ! -d "$target" ]; then
+        log_error "Directory not found: $target"
+        exit 1
+    fi
+    
+    log_info "Scanning directory: $target"
+    
+    # 除外パターン構築
+    local exclude_pattern=""
+    for dir in "${EXCLUDE_DIRS[@]}"; do
+        exclude_pattern="$exclude_pattern -path '*/$dir' -prune -o"
+    done
+    
+    # JSONヘッダー
+    if [ "$OUTPUT_FORMAT" = "json" ]; then
+        echo "{"
+        echo "  \"tool\": \"naming-checker\","
+        echo "  \"version\": \"$VERSION\","
+        echo "  \"timestamp\": \"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\","
+        echo "  \"target\": \"$target\","
+        echo "  \"violations\": ["
+    elif [ "$OUTPUT_FORMAT" = "csv" ]; then
+        echo "file,line,type,severity,message"
+    fi
+    
+    # JavaScriptファイルを検索して解析
+    local first_file=true
+    if [ -n "$exclude_pattern" ]; then
+        while IFS= read -r file; do
+            if [ -f "$file" ]; then
+                ((TOTAL_FILES++))
+                [ "$VERBOSE" = true ] && log_debug "Processing: $file"
+                analyze_file "$file"
+            fi
+        done < <(eval "find '$target' $exclude_pattern -type f \( -name '*.js' -o -name '*.jsx' -o -name '*.ts' -o -name '*.tsx' \) -print")
+    else
+        while IFS= read -r file; do
+            if [ -f "$file" ]; then
+                ((TOTAL_FILES++))
+                [ "$VERBOSE" = true ] && log_debug "Processing: $file"
+                analyze_file "$file"
+            fi
+        done < <(find "$target" -type f \( -name '*.js' -o -name '*.jsx' -o -name '*.ts' -o -name '*.tsx' \) -print)
+    fi
+    
+    # JSON出力の終了処理
+    if [ "$OUTPUT_FORMAT" = "json" ]; then
+        local first=true
+        for violation in "${JSON_VIOLATIONS[@]}"; do
+            IFS=':' read -r file line type message <<< "$violation"
+            
+            if [ "$first" = true ]; then
+                first=false
+            else
+                echo ","
+            fi
+            
+            cat << EOF
+    {
+      "file": "$file",
+      "line": $line,
+      "type": "$type",
+      "message": "$message"
+    }
+EOF
+        done
+        echo ""
+        echo "  ],"
+        echo "  \"summary\": {"
+        echo "    \"total_files\": $TOTAL_FILES,"
+        echo "    \"total_violations\": $TOTAL_VIOLATIONS,"
+        echo "    \"by_type\": {"
+        echo "      \"camelCase\": ${VIOLATIONS["camelCase"]},"
+        echo "      \"PascalCase\": ${VIOLATIONS["PascalCase"]},"
+        echo "      \"UPPER_SNAKE_CASE\": ${VIOLATIONS["UPPER_SNAKE_CASE"]},"
+        echo "      \"snake_case\": ${VIOLATIONS["snake_case"]},"
+        echo "      \"length\": ${VIOLATIONS["length"]},"
+        echo "      \"reserved\": ${VIOLATIONS["reserved"]}"
+        echo "    }"
+        echo "  }"
+        echo "}"
+    fi
+}
+
+# ======================================
+# 統計情報表示
+# ======================================
+show_statistics() {
+    echo ""
+    echo "${BOLD}${CYAN}=== 命名規則チェック統計 ===${RESET}"
+    echo ""
+    echo "  ${BOLD}スキャン対象:${RESET} $TOTAL_FILES ファイル"
+    echo "  ${BOLD}総違反数:${RESET} $TOTAL_VIOLATIONS 件"
+    echo ""
+    echo "${BOLD}違反内訳:${RESET}"
+    echo "  ${RED}✗${RESET} camelCase違反:        ${VIOLATIONS["camelCase"]} 件"
+    echo "  ${RED}✗${RESET} PascalCase違反:       ${VIOLATIONS["PascalCase"]} 件"
+    echo "  ${YELLOW}⚠${RESET} 定数命名違反:         ${VIOLATIONS["UPPER_SNAKE_CASE"]} 件"
+    echo "  ${YELLOW}⚠${RESET} snake_case使用:      ${VIOLATIONS["snake_case"]} 件"
+    echo "  ${BLUE}ℹ${RESET} 長さ違反:            ${VIOLATIONS["length"]} 件"
+    echo "  ${BLUE}ℹ${RESET} 予約語類似:          ${VIOLATIONS["reserved"]} 件"
+    echo ""
+    
+    # 違反率計算
+    if [ "$TOTAL_FILES" -gt 0 ]; then
+        local avg_violations=$((TOTAL_VIOLATIONS / TOTAL_FILES))
+        echo "  ${BOLD}平均違反数:${RESET} $avg_violations 件/ファイル"
+    fi
+    
+    # 品質評価
+    echo ""
+    if [ "$TOTAL_VIOLATIONS" -eq 0 ]; then
+        echo "  ${GREEN}${BOLD}✓ 素晴らしい！ 命名規則違反はありません${RESET}"
+    elif [ "$TOTAL_VIOLATIONS" -lt 10 ]; then
+        echo "  ${GREEN}${BOLD}✓ 良好: 違反は少なめです${RESET}"
+    elif [ "$TOTAL_VIOLATIONS" -lt 50 ]; then
+        echo "  ${YELLOW}${BOLD}⚠ 注意: いくつか改善の余地があります${RESET}"
+    else
+        echo "  ${RED}${BOLD}✗ 要改善: 多くの違反が検出されました${RESET}"
+    fi
+    echo ""
+}
+
+# ======================================
+# メイン処理
+# ======================================
+main() {
+    # 引数がない場合はヘルプを表示
+    if [ $# -eq 0 ]; then
+        show_help
+        exit 0
+    fi
+    
+    # 引数解析
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -h|--help)
+                show_help
+                exit 0
+                ;;
+            -v|--version)
+                echo "naming-checker v$VERSION"
+                exit 0
+                ;;
+            --verbose)
+                VERBOSE=true
+                shift
+                ;;
+            -o|--output)
+                OUTPUT_FORMAT="$2"
+                shift 2
+                ;;
+            --stats)
+                SHOW_STATS=true
+                shift
+                ;;
+            --severity)
+                SEVERITY_FILTER="$2"
+                shift 2
+                ;;
+            --exclude)
+                EXCLUDE_DIRS+=("$2")
+                shift 2
+                ;;
+            --allow-snake)
+                ALLOW_SNAKE=true
+                shift
+                ;;
+            --min-length)
+                MIN_LENGTH="$2"
+                shift 2
+                ;;
+            --max-length)
+                MAX_LENGTH="$2"
+                shift 2
+                ;;
+            --camel-case)
+                CAMEL_CASE=true
+                shift
+                ;;
+            --pascal-case)
+                PASCAL_CASE=true
+                shift
+                ;;
+            --upper-snake)
+                UPPER_SNAKE=true
+                shift
+                ;;
+            -*)
+                log_error "Unknown option: $1"
+                echo "Use --help for usage information"
+                exit 1
+                ;;
+            *)
+                TARGET_DIR="$1"
+                shift
+                ;;
+        esac
+    done
+    
+    # ターゲットディレクトリ必須チェック
+    if [ -z "$TARGET_DIR" ]; then
+        log_error "Target directory is required"
+        echo "Use --help for usage information"
+        exit 1
+    fi
+    
+    # JSON違反配列初期化
+    declare -a JSON_VIOLATIONS
+    
+    # スキャン実行
+    scan_directory "$TARGET_DIR"
+    
+    # 統計表示
+    if [ "$SHOW_STATS" = true ] && [ "$OUTPUT_FORMAT" = "console" ]; then
+        show_statistics
+    fi
+    
+    # 終了コード設定
+    if [ "$TOTAL_VIOLATIONS" -gt 0 ]; then
+        exit 1
+    else
+        log_success "No naming violations found!"
+        exit 0
+    fi
+}
+
+# エントリーポイント
+main "$@"
